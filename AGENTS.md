@@ -24,6 +24,8 @@
 - `scripts/`：维护脚本使用英文命名。
 - `docs/`：中文说明文档和方案记录。
 - `releases/`：发布压缩包，压缩包内不得包含本机真实额度数据或日志。
+- `VERSION`：当前版本号。
+- `CHANGELOG.md`：版本更新日志。
 
 ## 开发方向
 
@@ -77,6 +79,8 @@ python -m py_compile src\codex_bubble\floating_info_ball.py src\codex_bubble\cod
 - `docs/`
 - `README.md`
 - `AGENTS.md`
+- `VERSION`
+- `CHANGELOG.md`
 
 发布包不应包含：
 
