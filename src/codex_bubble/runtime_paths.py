@@ -1,4 +1,5 @@
 import os
+import tempfile
 from pathlib import Path
 
 
@@ -7,14 +8,22 @@ PROJECT_ROOT = APP_DIR.parents[1]
 APP_NAME = "CodexBubble"
 
 
-def user_runtime_root():
+def runtime_root_candidates():
+    candidates = []
+
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
-        return Path(local_app_data) / APP_NAME
-    return Path.home() / "AppData" / "Local" / APP_NAME
+        candidates.append(Path(local_app_data) / APP_NAME)
+    candidates.append(Path.home() / "AppData" / "Local" / APP_NAME)
+    candidates.append(Path(tempfile.gettempdir()) / APP_NAME)
+    return candidates
 
 
-USER_RUNTIME_ROOT = user_runtime_root()
+def root_candidates():
+    user_roots = runtime_root_candidates()
+    if (PROJECT_ROOT / ".git").exists():
+        return [*user_roots, PROJECT_ROOT]
+    return [PROJECT_ROOT, *user_roots]
 
 
 def is_writable_dir(path):
@@ -24,18 +33,19 @@ def is_writable_dir(path):
         probe.write_text("ok", encoding="utf-8")
         probe.unlink(missing_ok=True)
         return True
-    except OSError:
+    except Exception:
         return False
 
 
 def runtime_dir(project_relative):
-    preferred = PROJECT_ROOT / project_relative
-    if is_writable_dir(preferred):
-        return preferred
+    for root in root_candidates():
+        candidate = root / project_relative
+        if is_writable_dir(candidate):
+            return candidate
 
-    fallback = USER_RUNTIME_ROOT / project_relative
-    fallback.mkdir(parents=True, exist_ok=True)
-    return fallback
+    last_resort = Path(tempfile.gettempdir()) / APP_NAME / project_relative
+    last_resort.mkdir(parents=True, exist_ok=True)
+    return last_resort
 
 
 CONFIG_DIR = runtime_dir("config")

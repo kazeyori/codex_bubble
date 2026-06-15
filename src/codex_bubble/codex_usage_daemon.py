@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 from runtime_paths import DAEMON_LOG_PATH
+from single_instance import SingleInstance
 
 APP_DIR = Path(__file__).resolve().parent
 FETCHER = APP_DIR / "codex_usage_fetcher.py"
@@ -30,4 +31,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    instance = SingleInstance("Local\\CodexBubbleUsageDaemon")
+    if not instance.acquire():
+        sys.exit(0)
+    try:
+        main()
+    finally:
+        instance.release()

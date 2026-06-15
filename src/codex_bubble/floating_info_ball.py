@@ -1,15 +1,24 @@
 import json
+import subprocess
 import sys
+import threading
 import traceback
 import tkinter as tk
+import webbrowser
 from ctypes import WINFUNCTYPE, Structure, byref, c_int, c_ulong, sizeof, windll, wintypes
 from datetime import datetime
+from pathlib import Path
+from tkinter import messagebox
 
 from runtime_paths import CONFIG_PATH, DATA_PATH, DEFAULT_CONFIG_PATH, FLOATING_LOG_PATH
+from single_instance import SingleInstance
+from update_checker import check_for_update, friendly_error
 
 LOG_PATH = FLOATING_LOG_PATH
 TRANSPARENT = "#010203"
 SCREEN_MARGIN = 8
+DEFAULT_POSITION = {"x": 1380, "y": 220}
+CREATE_NO_WINDOW = 0x08000000
 
 DEFAULT_CONFIG = {
     "collapsed": True,
@@ -20,7 +29,7 @@ DEFAULT_CONFIG = {
         "five_hour": {"label": "5小时", "remaining": "-", "reset": "-"},
         "weekly": {"label": "1周", "remaining": "-", "reset": "-"},
     },
-    "position": {"x": 1380, "y": 220},
+    "position": dict(DEFAULT_POSITION),
     "colors": {
         "accent": "#007AFF",
         "glass": "#F7F7F8",
@@ -80,7 +89,7 @@ class FloatingInfoBall:
         self.root = tk.Tk()
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
-        self.root.attributes("-alpha", 0.98)
+        self.root.attributes("-alpha", 1.0)
         self.root.configure(bg=TRANSPARENT)
 
         try:
@@ -95,7 +104,8 @@ class FloatingInfoBall:
         self.click_targets = []
         self.drag_threshold = 10
         self.is_animating = False
-        self.menu_window = None
+        self.update_checking = False
+        self.menu = None
         self.font_main = ("Microsoft YaHei UI", 10, "bold")
         self.font_meta = ("Microsoft YaHei UI", 9)
         self.font_chip = ("Microsoft YaHei UI", 9, "bold")
@@ -117,11 +127,13 @@ class FloatingInfoBall:
             target.bind("<Button-3>", self.show_menu)
             target.bind("<Escape>", lambda _event: self.quit())
 
-        pos = self.config_data.get("position", {})
+        pos = self.safe_start_position(self.config_data.get("position", {}))
         self.root.geometry("+0+0")
         self.set_window_position(int(pos.get("x", 1200)), int(pos.get("y", 220)))
+        self.ensure_daemon_running()
         self.render()
         self.schedule_refresh()
+        self.root.after(3000, self.refresh_now)
 
     def load_config(self):
         if not CONFIG_PATH.exists() and DEFAULT_CONFIG_PATH.exists():
@@ -191,6 +203,21 @@ class FloatingInfoBall:
             encoding="utf-8",
         )
 
+    def ensure_daemon_running(self):
+        daemon_path = Path(__file__).resolve().parent / "codex_usage_daemon.py"
+        try:
+            subprocess.Popen(
+                [sys.executable, str(daemon_path)],
+                cwd=str(daemon_path.parent),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=CREATE_NO_WINDOW,
+            )
+        except Exception:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
+
     def save_position(self):
         self.config_data["position"] = {
             "x": self.root.winfo_x(),
@@ -203,18 +230,18 @@ class FloatingInfoBall:
         self.set_toplevel_position(self.root, x, y)
 
     def set_toplevel_position(self, window, x, y):
+        window.geometry(f"+{int(x)}+{int(y)}")
+        window.update_idletasks()
+
+    def safe_start_position(self, position):
         try:
-            windll.user32.SetWindowPos(
-                wintypes.HWND(window.winfo_id()),
-                None,
-                int(x),
-                int(y),
-                0,
-                0,
-                0x0001 | 0x0004 | 0x0010,
-            )
+            x = int(position.get("x", DEFAULT_POSITION["x"]))
+            y = int(position.get("y", DEFAULT_POSITION["y"]))
         except Exception:
-            window.geometry(f"+{int(x)}+{int(y)}")
+            return dict(DEFAULT_POSITION)
+        if abs(x) <= SCREEN_MARGIN and abs(y) <= SCREEN_MARGIN:
+            return dict(DEFAULT_POSITION)
+        return {"x": x, "y": y}
 
     def display_work_areas(self):
         monitors = []
@@ -508,6 +535,8 @@ class FloatingInfoBall:
         )
 
     def keep_on_screen(self):
+        if self.drag_start:
+            return
         win_w = self.root.winfo_width()
         win_h = self.root.winfo_height()
         x, y = self.clamp_to_area(
@@ -516,6 +545,18 @@ class FloatingInfoBall:
             win_w,
             win_h,
             self.work_area_for_window(),
+        )
+        self.set_window_position(x, y)
+
+    def keep_on_screen_for_point(self, point_x, point_y):
+        win_w = self.root.winfo_width()
+        win_h = self.root.winfo_height()
+        x, y = self.clamp_to_area(
+            self.root.winfo_x(),
+            self.root.winfo_y(),
+            win_w,
+            win_h,
+            self.work_area_for_point(point_x, point_y),
         )
         self.set_window_position(x, y)
 
@@ -556,7 +597,7 @@ class FloatingInfoBall:
 
     def finish_animation(self):
         try:
-            self.root.attributes("-alpha", 0.98)
+            self.root.attributes("-alpha", 1.0)
             self.save_position()
         finally:
             self.is_animating = False
@@ -572,6 +613,45 @@ class FloatingInfoBall:
         self.render()
         self.save_position()
 
+    def check_update_now(self):
+        if self.update_checking:
+            messagebox.showinfo("检查更新", "正在检查更新，请稍等。")
+            return
+        self.update_checking = True
+        thread = threading.Thread(target=self.check_update_worker, daemon=True)
+        thread.start()
+
+    def check_update_worker(self):
+        try:
+            update_info = check_for_update()
+            self.root.after(1, lambda: self.show_update_result(update_info))
+        except Exception as error:
+            message = friendly_error(error)
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
+            self.root.after(1, lambda: messagebox.showerror("检查更新", message))
+        finally:
+            self.root.after(1, self.finish_update_check)
+
+    def finish_update_check(self):
+        self.update_checking = False
+
+    def show_update_result(self, update_info):
+        if update_info.has_update:
+            message = (
+                f"发现新版本 v{update_info.latest_version}\n"
+                f"当前版本 v{update_info.current_version}\n\n"
+                "是否打开下载页面？"
+            )
+            if messagebox.askyesno("发现更新", message):
+                webbrowser.open(update_info.asset_url or update_info.release_url)
+            return
+
+        messagebox.showinfo(
+            "检查更新",
+            f"当前已是最新版本 v{update_info.current_version}",
+        )
+
     def run_menu_action(self, action, *args):
         self.close_menu()
         self.drag_start = None
@@ -579,82 +659,45 @@ class FloatingInfoBall:
         self.root.after(1, lambda: action(*args))
 
     def close_menu(self):
-        if self.menu_window is not None and self.menu_window.winfo_exists():
-            self.menu_window.destroy()
-        self.menu_window = None
-
-    def add_menu_item(self, parent, label, action, *args):
-        colors = self.config_data["colors"]
-        item = tk.Label(
-            parent,
-            text=label,
-            bg=colors["glass_soft"],
-            fg=colors["text"],
-            font=("Microsoft YaHei UI", 9),
-            padx=14,
-            pady=7,
-            anchor="w",
-            width=16,
-        )
-        item.pack(fill="x")
-        item.bind("<Enter>", lambda _event: item.configure(bg=colors["glass"]))
-        item.bind("<Leave>", lambda _event: item.configure(bg=colors["glass_soft"]))
-        item.bind("<ButtonRelease-1>", lambda _event: self.run_menu_action(action, *args))
-        return item
-
-    def add_menu_separator(self, parent):
-        colors = self.config_data["colors"]
-        line = tk.Frame(parent, bg=colors["line"], height=1)
-        line.pack(fill="x", padx=8, pady=3)
+        if self.menu is not None:
+            try:
+                self.menu.unpost()
+            except tk.TclError:
+                pass
+        self.menu = None
 
     def show_menu(self, event):
         self.close_menu()
         active = self.config_data.get("active_window", "five_hour")
-        colors = self.config_data["colors"]
-        menu = tk.Toplevel(self.root)
-        menu.overrideredirect(True)
-        menu.attributes("-topmost", True)
-        menu.configure(bg=colors["line"])
-
-        body = tk.Frame(
-            menu,
-            bg=colors["glass_soft"],
-            highlightbackground=colors["line"],
-            highlightthickness=1,
-            padx=4,
-            pady=4,
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(
+            label="收起" if self.expanded else "展开",
+            command=lambda: self.run_menu_action(self.toggle_expanded_without_animation),
         )
-        body.pack()
-
-        self.add_menu_item(body, "收起" if self.expanded else "展开", self.toggle_expanded_without_animation)
-        self.add_menu_separator(body)
-        self.add_menu_item(body, ("✓ " if active == "five_hour" else "  ") + "显示 5小时", self.set_active_window, "five_hour")
-        self.add_menu_item(body, ("✓ " if active == "weekly" else "  ") + "显示 1周", self.set_active_window, "weekly")
-        self.add_menu_separator(body)
-        self.add_menu_item(body, "刷新", self.refresh_now)
-        self.add_menu_item(
-            body,
-            "数据源: " + ("静态" if self.config_data.get("data_source") == "static" else "文件"),
-            self.refresh_now,
+        menu.add_separator()
+        menu.add_command(
+            label=("✓ " if active == "five_hour" else "  ") + "显示 5小时",
+            command=lambda: self.run_menu_action(self.set_active_window, "five_hour"),
         )
-        self.add_menu_separator(body)
-        self.add_menu_item(body, "退出", self.quit)
-
-        menu.bind("<Escape>", lambda _event: self.close_menu())
-        menu.bind("<FocusOut>", lambda _event: self.root.after(120, self.close_menu))
-        menu.update_idletasks()
-        menu_w = menu.winfo_reqwidth()
-        menu_h = menu.winfo_reqheight()
-        x, y = self.clamp_to_area(
-            event.x_root,
-            event.y_root,
-            menu_w,
-            menu_h,
-            self.work_area_for_point(event.x_root, event.y_root),
+        menu.add_command(
+            label=("✓ " if active == "weekly" else "  ") + "显示 1周",
+            command=lambda: self.run_menu_action(self.set_active_window, "weekly"),
         )
-        self.set_toplevel_position(menu, x, y)
-        menu.focus_force()
-        self.menu_window = menu
+        menu.add_separator()
+        menu.add_command(label="刷新", command=lambda: self.run_menu_action(self.refresh_now))
+        menu.add_command(label="检查更新", command=lambda: self.run_menu_action(self.check_update_now))
+        menu.add_command(
+            label="数据源: " + ("静态" if self.config_data.get("data_source") == "static" else "文件"),
+            command=lambda: self.run_menu_action(self.refresh_now),
+        )
+        menu.add_separator()
+        menu.add_command(label="退出", command=lambda: self.run_menu_action(self.quit))
+
+        self.menu = menu
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
         return "break"
 
     def start_drag(self, event):
@@ -687,7 +730,7 @@ class FloatingInfoBall:
             self.drag_start = None
             return
         if self.drag_start and self.was_dragged:
-            self.keep_on_screen()
+            self.keep_on_screen_for_point(event.x_root, event.y_root)
             self.save_position()
         elif not self.was_dragged:
             target = self.target_at(event.x, event.y)
@@ -710,6 +753,9 @@ class FloatingInfoBall:
 
 
 if __name__ == "__main__":
+    instance = SingleInstance("Local\\CodexBubbleFloatingInfoBall")
+    if not instance.acquire():
+        sys.exit(0)
     try:
         FloatingInfoBall().run()
     except KeyboardInterrupt:
@@ -718,3 +764,5 @@ if __name__ == "__main__":
         LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
         raise
+    finally:
+        instance.release()

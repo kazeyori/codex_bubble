@@ -12,6 +12,7 @@
 - 数据生成：`src/codex_bubble/codex_usage_fetcher.py` 解析会话快照，写入 `data/codex_usage_data.json`。
 - 后台同步：`src/codex_bubble/codex_usage_daemon.py` 每 60 秒运行一次读取器。
 - 桌面 UI：`src/codex_bubble/floating_info_ball.py` 读取 `config/` 和 `data/`，展示 5 小时/1 周额度窗口。
+- 桌面 UI 启动时会自动确保后台同步器在运行；后台同步器必须有单实例锁，避免重复启动。
 - 用户入口：根目录只保留中文启动文件 `启动悬浮球.bat`。
 - 未连接状态：所有额度值和重置时间显示为 `-`，不要使用示例百分比伪装真实数据。
 
@@ -22,6 +23,7 @@
 - `data/`：运行时生成的数据，必须被 `.gitignore` 忽略。
 - `logs/`：运行时日志，必须被 `.gitignore` 忽略。
 - 运行时目录不可写时，自动回退到 `%LOCALAPPDATA%\CodexBubble`。
+- 在 git 开发仓库里运行时，运行时配置、数据和日志必须写到用户运行目录，不得写脏 tracked 的默认 `config/` 文件。
 - `scripts/`：维护脚本使用英文命名。
 - `docs/`：中文说明文档和方案记录。
 - `releases/`：发布压缩包，压缩包内不得包含本机真实额度数据或日志。
@@ -34,15 +36,17 @@
 1. 稳定本地额度解析：优先兼容 Codex 会话快照字段变化，解析失败时给出清晰日志。
 2. 打磨 Windows 桌面体验：悬浮球拖动、展开、右键菜单、屏幕边界和高 DPI 行为要稳定。
 3. 保持用户入口简单：普通用户只需要双击 `启动悬浮球.bat`。
-4. 发布包可直接使用：发布前重新生成 `releases/codex-floating-info-ball-share.zip`。
-5. 文档中文优先：用户使用说明用中文；维护脚本和源码命名保持英文。
+4. 在线更新先以“检查 GitHub Release 并打开下载页”为主，自动覆盖安装必须单独设计回滚和进程退出策略。
+5. 发布包可直接使用：发布前重新生成 `releases/codex-floating-info-ball-share.zip`。
+6. 文档中文优先：用户使用说明用中文；维护脚本和源码命名保持英文。
 
 ## 多屏交互约定
 
 - 使用 Windows `EnumDisplayMonitors` / `GetMonitorInfoW` 获取每个显示器的工作区。
 - 允许窗口保存负坐标，支持副屏在主屏左侧或上方的布局。
-- 拖动时不要按主屏 `0..screen_w` 边界夹住窗口，拖动结束后只把窗口夹回当前所在显示器的工作区。
-- 右键菜单应在鼠标所在显示器的工作区内弹出。
+- 拖动时不要按主屏 `0..screen_w` 边界夹住窗口，也不要在拖动过程中夹取位置；拖动结束后只把窗口夹回鼠标所在显示器的工作区。
+- 透明悬浮窗拖动时不要切换成非透明外壳；窗口移动统一使用 Tk `geometry`，不要用 Win32 `SetWindowPos` 移动 Tk 透明窗口，避免固定在左上角或出现黑块。
+- 右键菜单优先使用系统原生菜单，避免自绘菜单被悬浮窗透明层遮挡、定位异常或截断。
 - 如果保存的位置对应的显示器已移除，把窗口移动到最近的可用显示器工作区内。
 
 ## 不做的事
@@ -52,6 +56,7 @@
 - 不执行用户环境变量提供的额度命令。
 - 不调用 ChatGPT/Codex 远程额度接口。
 - 不关闭、重启、杀掉或控制 Codex 进程。
+- 不在更新检查时自动覆盖本地安装目录。
 - 不把本机 `data/codex_usage_data.json`、日志、缓存、`.git` 打包。
 - 不为了视觉效果引入重型 GUI 框架，除非明确决定重写桌面端。
 
@@ -61,7 +66,7 @@
 - 修改源码后运行：
 
 ```powershell
-python -m py_compile src\codex_bubble\floating_info_ball.py src\codex_bubble\codex_usage_fetcher.py src\codex_bubble\codex_usage_daemon.py
+python -m py_compile src\codex_bubble\runtime_paths.py src\codex_bubble\single_instance.py src\codex_bubble\update_checker.py src\codex_bubble\floating_info_ball.py src\codex_bubble\codex_usage_fetcher.py src\codex_bubble\codex_usage_daemon.py
 ```
 
 - 准备发布前必须运行：
@@ -80,6 +85,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
   - `scripts/run_codex_local_usage_once.bat`
   - `scripts/start_codex_usage_daemon_local.bat`
   - `scripts/install_local_usage_startup.ps1`
+- 修改启动流程后必须验证重复启动行为：悬浮球和后台同步器都不能多开。
 
 ## 发布包规则
 

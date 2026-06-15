@@ -12,6 +12,8 @@ $starterName = [string]::Concat([char[]](21551,21160,24748,28014,29699,46,98,97,
 Write-Host "Checking Python syntax..."
 $pythonFiles = @(
   "src\codex_bubble\runtime_paths.py",
+  "src\codex_bubble\single_instance.py",
+  "src\codex_bubble\update_checker.py",
   "src\codex_bubble\floating_info_ball.py",
   "src\codex_bubble\codex_usage_fetcher.py",
   "src\codex_bubble\codex_usage_daemon.py"
@@ -22,7 +24,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Checking module imports..."
-& python -c "import sys; sys.path.insert(0, r'$root\src\codex_bubble'); import runtime_paths, codex_usage_fetcher, codex_usage_daemon, floating_info_ball; print('imports ok')"
+& python -c "import sys; sys.path.insert(0, r'$root\src\codex_bubble'); import runtime_paths, single_instance, update_checker, codex_usage_fetcher, codex_usage_daemon, floating_info_ball; print('imports ok')"
 if ($LASTEXITCODE -ne 0) {
   throw "Python import check failed."
 }
@@ -40,6 +42,8 @@ $requiredFiles = @(
   $starterName,
   ".github\workflows\release.yml",
   "src\codex_bubble\runtime_paths.py",
+  "src\codex_bubble\single_instance.py",
+  "src\codex_bubble\update_checker.py",
   "docs\assets\preview-chip-five-hour.png",
   "docs\assets\preview-chip-weekly.png",
   "docs\assets\preview-panel.png"
@@ -67,6 +71,8 @@ try {
     "VERSION",
     $starterName,
     "src\codex_bubble\runtime_paths.py",
+    "src\codex_bubble\single_instance.py",
+    "src\codex_bubble\update_checker.py",
     "src\codex_bubble\floating_info_ball.py",
     "src\codex_bubble\codex_usage_fetcher.py",
     "src\codex_bubble\codex_usage_daemon.py",
