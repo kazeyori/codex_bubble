@@ -1,0 +1,33 @@
+{
+  "collapsed": true,
+  "refresh_label": "刷新",
+  "active_window": "five_hour",
+  "data_source": "codex-local-sessions",
+  "usage_windows": {
+    "five_hour": {
+      "label": "5小时",
+      "remaining": "70%",
+      "reset": "17:57"
+    },
+    "weekly": {
+      "label": "1周",
+      "remaining": "92%",
+      "reset": "6月22日"
+    }
+  },
+  "position": {
+    "x": 2396,
+    "y": 1337
+  },
+  "colors": {
+    "accent": "#007AFF",
+    "glass": "#F7F7F8",
+    "glass_soft": "#FFFFFF",
+    "text": "#111111",
+    "muted": "#8E8E93",
+    "line": "#D9D9DE",
+    "shadow": "#C7C7CC",
+    "icon": "#111111",
+    "icon_text": "#FFFFFF"
+  }
+}
