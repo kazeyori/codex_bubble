@@ -15,14 +15,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve package
+      - name: Build installer
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
+
+      - name: Resolve installer
         id: package
         shell: pwsh
         run: |
           $tag = "${{ github.ref_name }}"
-          $package = "releases/codex-bubble-$tag.zip"
+          $version = $tag.TrimStart("v")
+          $package = "releases/codex-bubble-setup-v$version.exe"
           if (!(Test-Path -LiteralPath $package)) {
-            throw "Release package not found: $package"
+            throw "Release installer not found: $package"
           }
           "package=$package" >> $env:GITHUB_OUTPUT
 

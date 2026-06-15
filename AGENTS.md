@@ -26,7 +26,8 @@
 - 在 git 开发仓库里运行时，运行时配置、数据和日志必须写到用户运行目录，不得写脏 tracked 的默认 `config/` 文件。
 - `scripts/`：维护脚本使用英文命名。
 - `docs/`：中文说明文档和方案记录。
-- `releases/`：发布压缩包，压缩包内不得包含本机真实额度数据或日志。
+- `scripts/installer/`：安装器内部脚本，负责当前用户安装、快捷方式和覆盖升级。
+- `releases/`：本地构建输出目录，发布产物不得提交到 Git；Release 由 CI 构建并上传安装器。
 - `VERSION`：当前版本号。
 - `CHANGELOG.md`：版本更新日志。
 - `.github/workflows/release.yml`：推送 `v*` tag 后自动创建 GitHub Release。
@@ -36,8 +37,8 @@
 1. 稳定本地额度解析：优先兼容 Codex 会话快照字段变化，解析失败时给出清晰日志。
 2. 打磨 Windows 桌面体验：悬浮球拖动、展开、右键菜单、屏幕边界和高 DPI 行为要稳定。
 3. 保持用户入口简单：普通用户只需要双击 `启动悬浮球.bat`。
-4. 在线更新先以“检查 GitHub Release 并打开下载页”为主，自动覆盖安装必须单独设计回滚和进程退出策略。
-5. 发布包可直接使用：发布前重新生成 `releases/codex-floating-info-ball-share.zip`。
+4. 在线更新以“检查 GitHub Release 并打开新版安装器”为主；安装器负责退出旧版进程并覆盖升级，不在运行中的 UI 里直接改写安装目录。
+5. 面向用户的 Release 必须是 Windows 安装器 `.exe`，不要再把 zip 源码包作为主要下载物。
 6. 文档中文优先：用户使用说明用中文；维护脚本和源码命名保持英文。
 
 ## 多屏交互约定
@@ -87,9 +88,9 @@ powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
   - `scripts/install_local_usage_startup.ps1`
 - 修改启动流程后必须验证重复启动行为：悬浮球和后台同步器都不能多开。
 
-## 发布包规则
+## 安装器发布规则
 
-发布包应包含：
+安装器内部 payload 应包含：
 
 - `启动悬浮球.bat`
 - `src/`
@@ -101,7 +102,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
 - `VERSION`
 - `CHANGELOG.md`
 
-发布包不应包含：
+安装器内部 payload 不应包含：
 
 - `.git/`
 - `data/`
@@ -110,11 +111,14 @@ powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
 - `*.log`
 - 本机生成的 `codex_usage_data.json`
 
+面向 GitHub Release 的用户下载物应命名为 `codex-bubble-setup-vX.Y.Z.exe`。zip 只能作为安装器内部 payload 或本地临时验证材料，不应作为主要 Release 资产上传。
+
 ## GitHub 发布纪律
 
-- 使用 `scripts\build_release.ps1` 生成发布包。
-- 使用 `scripts\verify_release.ps1` 核验发布包。
+- 使用 `scripts\build_release.ps1` 生成安装器。
+- 使用 `scripts\verify_release.ps1` 核验安装器和内部 payload。
 - 核验失败时禁止推送 `v*` tag。
 - 核验失败时禁止触发 GitHub Release。
+- GitHub Actions 必须在 tag 触发后现场构建安装器并上传 `.exe`，不要要求仓库里预先提交二进制发布包。
 - 自动化无法覆盖的界面交互，必须记录人工确认结果后再发布。
 - 如果发现临时文件进入 Git 状态或发布包，必须先修 `.gitignore` 和构建脚本，再重新核验。

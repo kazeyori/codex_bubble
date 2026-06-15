@@ -1,9 +1,19 @@
 Codex 额度悬浮球使用说明
 ========================
 
-一、启动
+一、安装和启动
 
-双击项目根目录的：
+从 GitHub Release 下载：
+
+codex-bubble-setup-v0.1.3.exe
+
+双击安装器完成安装。安装器会把程序安装到当前用户目录，并创建桌面和开始菜单快捷方式：
+
+Codex 额度悬浮球
+
+以后通过这个快捷方式启动即可。
+
+如果你是在源码或安装目录中手动启动，也可以双击：
 
 启动悬浮球.bat
 
@@ -43,8 +53,9 @@ scripts/uninstall_local_usage_startup.ps1
 五、在线更新
 
 - 右键悬浮球，选择“检查更新”。
-- 如果 GitHub Release 有新版本，软件会询问是否打开下载页面。
-- 当前版本不会自动覆盖本地文件，避免更新时误关正在使用的 Codex。
+- 如果 GitHub Release 有新版本，软件会打开新版安装器下载地址。
+- 下载后直接运行新版安装器即可覆盖升级。
+- 安装器会先退出旧版悬浮球和后台同步器，再安装新版。
 
 六、多屏使用
 
@@ -55,6 +66,7 @@ scripts/uninstall_local_usage_startup.ps1
 
 七、文件位置
 
+- 默认安装目录：%LOCALAPPDATA%\Programs\CodexBubble
 - src/codex_bubble/floating_info_ball.py：悬浮球主程序
 - src/codex_bubble/codex_usage_fetcher.py：读取本机 Codex 会话快照
 - src/codex_bubble/codex_usage_daemon.py：后台同步器

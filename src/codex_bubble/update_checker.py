@@ -64,11 +64,14 @@ def fetch_latest_release():
 
 
 def extract_asset_url(release_data):
+    fallback = ""
     for asset in release_data.get("assets", []):
         name = asset.get("name", "")
-        if name.endswith(".zip") and "codex-bubble" in name:
+        if name.endswith(".exe") and "codex-bubble-setup" in name:
             return asset.get("browser_download_url", "")
-    return ""
+        if name.endswith(".zip") and "codex-bubble" in name:
+            fallback = asset.get("browser_download_url", "")
+    return fallback
 
 
 def check_for_update():

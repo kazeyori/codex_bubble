@@ -16,3 +16,7 @@ temp/
 Thumbs.db
 desktop.ini
 releases/*.tmp
+releases/*.zip
+releases/*.exe
+releases/*.cab
+scripts/installer/*.sed
