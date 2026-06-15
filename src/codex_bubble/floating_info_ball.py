@@ -4,14 +4,10 @@ import traceback
 import tkinter as tk
 from ctypes import WINFUNCTYPE, Structure, byref, c_int, c_ulong, sizeof, windll, wintypes
 from datetime import datetime
-from pathlib import Path
 
+from runtime_paths import CONFIG_PATH, DATA_PATH, DEFAULT_CONFIG_PATH, FLOATING_LOG_PATH
 
-APP_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = APP_DIR.parents[1]
-CONFIG_PATH = PROJECT_ROOT / "config" / "floating_info_ball_config.json"
-DATA_PATH = PROJECT_ROOT / "data" / "codex_usage_data.json"
-LOG_PATH = PROJECT_ROOT / "logs" / "floating_info_ball.log"
+LOG_PATH = FLOATING_LOG_PATH
 TRANSPARENT = "#010203"
 SCREEN_MARGIN = 8
 
@@ -128,6 +124,11 @@ class FloatingInfoBall:
         self.schedule_refresh()
 
     def load_config(self):
+        if not CONFIG_PATH.exists() and DEFAULT_CONFIG_PATH.exists():
+            return deep_merge(
+                DEFAULT_CONFIG,
+                json.loads(DEFAULT_CONFIG_PATH.read_text(encoding="utf-8-sig")),
+            )
         if not CONFIG_PATH.exists():
             CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
             CONFIG_PATH.write_text(

@@ -21,6 +21,7 @@
 - `config/`：放默认配置和可编辑配置。
 - `data/`：运行时生成的数据，必须被 `.gitignore` 忽略。
 - `logs/`：运行时日志，必须被 `.gitignore` 忽略。
+- 运行时目录不可写时，自动回退到 `%LOCALAPPDATA%\CodexBubble`。
 - `scripts/`：维护脚本使用英文命名。
 - `docs/`：中文说明文档和方案记录。
 - `releases/`：发布压缩包，压缩包内不得包含本机真实额度数据或日志。
@@ -63,6 +64,17 @@
 python -m py_compile src\codex_bubble\floating_info_ball.py src\codex_bubble\codex_usage_fetcher.py src\codex_bubble\codex_usage_daemon.py
 ```
 
+- 准备发布前必须运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
+```
+
+- 任何功能追加或 BUG 修复，必须本地核验通过后才能打包、打 tag 或推送 GitHub Release。
+- 如果自动化无法验证某个行为，必须在本机运行软件，让用户确认后再继续。
+- 如果界面、交互或外观发生变化，必须更新 `docs/assets/` 中的截图，并同步更新 `README.md` 的预览图或说明。
+- 开发临时文件、缓存、日志、运行时数据必须加入 `.gitignore`，也必须从发布包中排除。
+
 - 修改启动流程后至少检查这些脚本路径：
   - `启动悬浮球.bat`
   - `scripts/run_codex_local_usage_once.bat`
@@ -91,3 +103,12 @@ python -m py_compile src\codex_bubble\floating_info_ball.py src\codex_bubble\cod
 - `__pycache__/`
 - `*.log`
 - 本机生成的 `codex_usage_data.json`
+
+## GitHub 发布纪律
+
+- 使用 `scripts\build_release.ps1` 生成发布包。
+- 使用 `scripts\verify_release.ps1` 核验发布包。
+- 核验失败时禁止推送 `v*` tag。
+- 核验失败时禁止触发 GitHub Release。
+- 自动化无法覆盖的界面交互，必须记录人工确认结果后再发布。
+- 如果发现临时文件进入 Git 状态或发布包，必须先修 `.gitignore` 和构建脚本，再重新核验。

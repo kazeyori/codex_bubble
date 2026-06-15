@@ -4,3 +4,15 @@ __pycache__/
 data/
 logs/
 .pytest_cache/
+.venv/
+venv/
+env/
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+releases/*.tmp

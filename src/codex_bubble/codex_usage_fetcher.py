@@ -4,11 +4,9 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from runtime_paths import DATA_PATH, FETCHER_LOG_PATH
 
-APP_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = APP_DIR.parents[1]
-DATA_PATH = PROJECT_ROOT / "data" / "codex_usage_data.json"
-LOG_PATH = PROJECT_ROOT / "logs" / "codex_usage_fetcher.log"
+LOG_PATH = FETCHER_LOG_PATH
 
 LABEL_USAGE = "\u7528\u91cf"
 LABEL_FIVE_HOUR = "5\u5c0f\u65f6"
