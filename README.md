@@ -6,6 +6,17 @@
 
 当前版本只保留正确方案：读取本机 Codex 会话快照里的 `rate_limits`，不读取 cookie，不读取 token，不读取 `auth.json`，不调用远程额度接口，也不会把本机实时额度数据打进分享包。
 
+## 预览
+
+折叠态：
+
+![5小时折叠态](docs/assets/preview-chip-five-hour.png)
+![1周折叠态](docs/assets/preview-chip-weekly.png)
+
+展开态：
+
+![展开面板](docs/assets/preview-panel.png)
+
 ## 快速启动
 
 1. 从 GitHub Release 下载 `codex-bubble-v0.1.0.zip`，然后解压。

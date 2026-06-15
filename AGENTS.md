@@ -26,6 +26,7 @@
 - `releases/`：发布压缩包，压缩包内不得包含本机真实额度数据或日志。
 - `VERSION`：当前版本号。
 - `CHANGELOG.md`：版本更新日志。
+- `.github/workflows/release.yml`：推送 `v*` tag 后自动创建 GitHub Release。
 
 ## 开发方向
 
