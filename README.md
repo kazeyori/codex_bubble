@@ -1,47 +1,38 @@
-Codex 额度悬浮球
-================
+# Codex 额度悬浮球
 
-这是一个 Windows 桌面小悬浮球，用来显示本机 Codex 的额度信息。
+这是一个 Windows 桌面悬浮球，用来显示本机 Codex 的额度信息。
 
-当前版本只保留正确方案：读取本机 Codex 会话快照里的 `rate_limits`，不读取 cookie，不读取 token，不读取 `auth.json`，也不会把你的当前额度数据打进分享包。
+当前版本只保留正确方案：读取本机 Codex 会话快照里的 `rate_limits`，不读取 cookie，不读取 token，不读取 `auth.json`，也不会把本机实时额度数据打进分享包。
 
-用法
-----
+## 快速启动
 
-1. 下载或解压分享包。
-2. 双击 `启动悬浮球.bat`。
-3. 如果显示“未连接”，先在这台电脑上使用 Codex 发一条消息，等待一分钟或运行 `run_codex_local_usage_once.bat`。
+1. 确认电脑已安装 Python 3。
+2. 双击根目录的 `启动悬浮球.bat`。
+3. 如果显示“未连接”，先在这台电脑上使用 Codex 发一条消息，等待一分钟，或运行 `scripts/run_codex_local_usage_once.bat` 手动刷新一次。
 
-开机启动
---------
+## 项目结构
 
-右键 `install_local_usage_startup.ps1`，选择“使用 PowerShell 运行”。
+```text
+.
+├─ 启动悬浮球.bat                 # 普通用户双击入口
+├─ src/codex_bubble/              # Python 源码
+├─ config/                        # 默认配置
+├─ data/                          # 本机生成的额度数据，不提交
+├─ logs/                          # 运行日志，不提交
+├─ scripts/                       # 英文维护脚本
+├─ docs/                          # 中文使用、安全和方案文档
+├─ releases/                      # 可分享压缩包
+└─ AGENTS.md                      # Agent/开发者协作规范
+```
 
-取消开机启动时，右键运行 `uninstall_local_usage_startup.ps1`。
+## 常用脚本
 
-操作
-----
+- `启动悬浮球.bat`：启动后台同步器和桌面悬浮球。
+- `scripts/run_codex_local_usage_once.bat`：手动读取一次本机 Codex 会话快照。
+- `scripts/start_codex_usage_daemon_local.bat`：只启动后台同步器。
+- `scripts/install_local_usage_startup.ps1`：安装开机启动。
+- `scripts/uninstall_local_usage_startup.ps1`：取消开机启动。
 
-- 左键单击：展开或收起
-- 左键拖动：移动位置，位置会自动保存
-- 右键单击：打开菜单
-- 菜单里可以切换 `5小时` / `1周`、刷新、展开收起、退出
+## 开发方向
 
-文件
-----
-
-- `floating_info_ball.py`：悬浮球主程序
-- `floating_info_ball_config.json`：悬浮球配置和位置
-- `codex_usage_fetcher.py`：读取本机 Codex 会话快照并生成额度数据
-- `codex_usage_daemon.py`：每分钟运行一次读取器
-- `启动悬浮球.bat`：给普通用户双击的中文启动入口
-- `install_local_usage_startup.ps1`：安装开机启动
-- `uninstall_local_usage_startup.ps1`：取消开机启动
-- `run_codex_local_usage_once.bat`：手动刷新一次额度
-- `start_codex_usage_daemon_local.bat`：只启动后台同步器
-- `codex-floating-info-ball-share.zip`：可分享压缩包
-
-安全说明
---------
-
-这个版本不会读取浏览器 cookie、ChatGPT/Codex 登录态、token、`auth.json` 或密码。它只解析 Codex 本地会话快照里的 `token_count.rate_limits` 字段，用来显示剩余额度和刷新时间。
+后续开发请优先阅读 `AGENTS.md`。核心方向是：保持本地、安全、轻量，继续打磨 Windows 桌面体验，而不是接入敏感账号凭据或远程接口。

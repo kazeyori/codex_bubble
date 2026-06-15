@@ -11,8 +11,9 @@ from pathlib import Path
 
 
 APP_DIR = Path(__file__).resolve().parent
-DATA_PATH = APP_DIR / "codex_usage_data.json"
-LOG_PATH = APP_DIR / "codex_usage_fetcher.log"
+PROJECT_ROOT = APP_DIR.parents[1]
+DATA_PATH = PROJECT_ROOT / "data" / "codex_usage_data.json"
+LOG_PATH = PROJECT_ROOT / "logs" / "codex_usage_fetcher.log"
 WHAM_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 
 LABEL_USAGE = "\u7528\u91cf"
@@ -24,6 +25,7 @@ LABEL_MINUTE = "\u5206\u949f"
 
 def write_log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     LOG_PATH.write_text(f"[{timestamp}] {message}\n", encoding="utf-8")
 
 
@@ -318,6 +320,7 @@ def main():
                 "No Codex rate-limit data found. Use Codex once, or set CODEX_USAGE_COMMAND/CODEX_USAGE_URL."
             )
 
+        DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
         DATA_PATH.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",

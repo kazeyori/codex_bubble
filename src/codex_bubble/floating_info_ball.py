@@ -7,9 +7,10 @@ from pathlib import Path
 
 
 APP_DIR = Path(__file__).resolve().parent
-CONFIG_PATH = APP_DIR / "floating_info_ball_config.json"
-DATA_PATH = APP_DIR / "codex_usage_data.json"
-LOG_PATH = APP_DIR / "floating_info_ball.log"
+PROJECT_ROOT = APP_DIR.parents[1]
+CONFIG_PATH = PROJECT_ROOT / "config" / "floating_info_ball_config.json"
+DATA_PATH = PROJECT_ROOT / "data" / "codex_usage_data.json"
+LOG_PATH = PROJECT_ROOT / "logs" / "floating_info_ball.log"
 TRANSPARENT = "#010203"
 
 DEFAULT_CONFIG = {
@@ -96,6 +97,7 @@ class FloatingInfoBall:
 
     def load_config(self):
         if not CONFIG_PATH.exists():
+            CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
             CONFIG_PATH.write_text(
                 json.dumps(DEFAULT_CONFIG, ensure_ascii=False, indent=2),
                 encoding="utf-8",
@@ -121,6 +123,7 @@ class FloatingInfoBall:
                     }
             return merged
         except Exception:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
             return dict(DEFAULT_CONFIG)
 
@@ -139,9 +142,11 @@ class FloatingInfoBall:
                 self.config_data["active_window"] = data["active_window"]
             self.config_data["data_source"] = data.get("data_source", "file")
         except Exception:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
 
     def save_config(self):
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(
             json.dumps(self.config_data, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -573,5 +578,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         sys.exit(0)
     except Exception:
+        LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
         raise

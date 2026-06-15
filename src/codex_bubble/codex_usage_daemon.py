@@ -5,11 +5,13 @@ from pathlib import Path
 
 
 APP_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = APP_DIR.parents[1]
 FETCHER = APP_DIR / "codex_usage_fetcher.py"
-LOG_PATH = APP_DIR / "codex_usage_daemon.log"
+LOG_PATH = PROJECT_ROOT / "logs" / "codex_usage_daemon.log"
 
 
 def log(message):
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     LOG_PATH.write_text(message + "\n", encoding="utf-8")
 
 

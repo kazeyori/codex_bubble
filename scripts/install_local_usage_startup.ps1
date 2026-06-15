@@ -1,10 +1,10 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
-$appDir = Split-Path -Parent $PSCommandPath
-if ([string]::IsNullOrWhiteSpace($appDir)) {
-  $appDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptDir = Split-Path -Parent $PSCommandPath
+if ([string]::IsNullOrWhiteSpace($scriptDir)) {
+  $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 }
-$appDir = (Resolve-Path -LiteralPath $appDir).Path
+$appDir = (Resolve-Path -LiteralPath (Join-Path $scriptDir "..")).Path
 $startup = [Environment]::GetFolderPath("Startup")
 $shortcutPath = Join-Path $startup "Codex Floating Info Ball Local Usage.lnk"
 $starter = Join-Path $appDir "启动悬浮球.bat"
