@@ -2,6 +2,7 @@ import json
 import sys
 import traceback
 import tkinter as tk
+from ctypes import WINFUNCTYPE, Structure, byref, c_int, c_ulong, sizeof, windll, wintypes
 from datetime import datetime
 from pathlib import Path
 
@@ -12,6 +13,7 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "floating_info_ball_config.json"
 DATA_PATH = PROJECT_ROOT / "data" / "codex_usage_data.json"
 LOG_PATH = PROJECT_ROOT / "logs" / "floating_info_ball.log"
 TRANSPARENT = "#010203"
+SCREEN_MARGIN = 8
 
 DEFAULT_CONFIG = {
     "collapsed": True,
@@ -52,6 +54,28 @@ def disconnected_usage_windows():
         "five_hour": {"label": "5小时", "remaining": "-", "reset": "-"},
         "weekly": {"label": "1周", "remaining": "-", "reset": "-"},
     }
+
+
+class Rect(Structure):
+    _fields_ = [
+        ("left", c_int),
+        ("top", c_int),
+        ("right", c_int),
+        ("bottom", c_int),
+    ]
+
+
+class MonitorInfo(Structure):
+    _fields_ = [
+        ("cbSize", c_ulong),
+        ("rcMonitor", Rect),
+        ("rcWork", Rect),
+        ("dwFlags", c_ulong),
+    ]
+
+
+def rect_to_tuple(rect):
+    return (rect.left, rect.top, rect.right, rect.bottom)
 
 
 class FloatingInfoBall:
@@ -98,7 +122,8 @@ class FloatingInfoBall:
             target.bind("<Escape>", lambda _event: self.quit())
 
         pos = self.config_data.get("position", {})
-        self.root.geometry(f"+{int(pos.get('x', 1200))}+{int(pos.get('y', 220))}")
+        self.root.geometry("+0+0")
+        self.set_window_position(int(pos.get("x", 1200)), int(pos.get("y", 220)))
         self.render()
         self.schedule_refresh()
 
@@ -172,6 +197,98 @@ class FloatingInfoBall:
         }
         self.config_data["collapsed"] = not self.expanded
         self.save_config()
+
+    def set_window_position(self, x, y):
+        self.set_toplevel_position(self.root, x, y)
+
+    def set_toplevel_position(self, window, x, y):
+        try:
+            windll.user32.SetWindowPos(
+                wintypes.HWND(window.winfo_id()),
+                None,
+                int(x),
+                int(y),
+                0,
+                0,
+                0x0001 | 0x0004 | 0x0010,
+            )
+        except Exception:
+            window.geometry(f"+{int(x)}+{int(y)}")
+
+    def display_work_areas(self):
+        monitors = []
+
+        def callback(monitor, _hdc, _rect, _data):
+            info = MonitorInfo()
+            info.cbSize = c_ulong(sizeof(MonitorInfo))
+            if windll.user32.GetMonitorInfoW(monitor, byref(info)):
+                monitors.append(rect_to_tuple(info.rcWork))
+            return 1
+
+        try:
+            windll.user32.EnumDisplayMonitors(
+                None,
+                None,
+                WINFUNCTYPE(c_int, wintypes.HMONITOR, wintypes.HDC, wintypes.LPRECT, wintypes.LPARAM)(callback),
+                0,
+            )
+        except Exception:
+            monitors = []
+
+        if not monitors:
+            monitors.append((0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight()))
+        return monitors
+
+    def work_area_for_point(self, x, y):
+        areas = self.display_work_areas()
+        for area in areas:
+            left, top, right, bottom = area
+            if left <= x < right and top <= y < bottom:
+                return area
+
+        def distance(area):
+            left, top, right, bottom = area
+            clamped_x = min(max(x, left), right)
+            clamped_y = min(max(y, top), bottom)
+            return (x - clamped_x) ** 2 + (y - clamped_y) ** 2
+
+        return min(areas, key=distance)
+
+    def work_area_for_window(self):
+        win_w = max(1, self.root.winfo_width())
+        win_h = max(1, self.root.winfo_height())
+        x = self.root.winfo_x()
+        y = self.root.winfo_y()
+        center_x = x + win_w // 2
+        center_y = y + win_h // 2
+        areas = self.display_work_areas()
+
+        def overlap(area):
+            left, top, right, bottom = area
+            overlap_w = max(0, min(x + win_w, right) - max(x, left))
+            overlap_h = max(0, min(y + win_h, bottom) - max(y, top))
+            return overlap_w * overlap_h
+
+        best = max(areas, key=overlap)
+        if overlap(best) > 0:
+            return best
+        return self.work_area_for_point(center_x, center_y)
+
+    def clamp_to_area(self, x, y, width, height, area):
+        left, top, right, bottom = area
+        min_x = left + SCREEN_MARGIN
+        min_y = top + SCREEN_MARGIN
+        max_x = right - width - SCREEN_MARGIN
+        max_y = bottom - height - SCREEN_MARGIN
+        if max_x < min_x:
+            x = min_x
+        else:
+            x = min(max(x, min_x), max_x)
+        if max_y < min_y:
+            y = min_y
+        else:
+            y = min(max(y, min_y), max_y)
+        return int(x), int(y)
 
     def rounded_rect(self, x1, y1, x2, y2, radius, **kwargs):
         points = [
@@ -390,13 +507,16 @@ class FloatingInfoBall:
         )
 
     def keep_on_screen(self):
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
         win_w = self.root.winfo_width()
         win_h = self.root.winfo_height()
-        x = max(0, min(self.root.winfo_x(), screen_w - win_w - 8))
-        y = max(0, min(self.root.winfo_y(), screen_h - win_h - 8))
-        self.root.geometry(f"+{x}+{y}")
+        x, y = self.clamp_to_area(
+            self.root.winfo_x(),
+            self.root.winfo_y(),
+            win_w,
+            win_h,
+            self.work_area_for_window(),
+        )
+        self.set_window_position(x, y)
 
     def target_at(self, x, y):
         for x1, y1, x2, y2, target in self.click_targets:
@@ -524,11 +644,14 @@ class FloatingInfoBall:
         menu.update_idletasks()
         menu_w = menu.winfo_reqwidth()
         menu_h = menu.winfo_reqheight()
-        screen_w = menu.winfo_screenwidth()
-        screen_h = menu.winfo_screenheight()
-        x = min(max(8, event.x_root), screen_w - menu_w - 8)
-        y = min(max(8, event.y_root), screen_h - menu_h - 8)
-        menu.geometry(f"+{x}+{y}")
+        x, y = self.clamp_to_area(
+            event.x_root,
+            event.y_root,
+            menu_w,
+            menu_h,
+            self.work_area_for_point(event.x_root, event.y_root),
+        )
+        self.set_toplevel_position(menu, x, y)
         menu.focus_force()
         self.menu_window = menu
         return "break"
@@ -556,7 +679,7 @@ class FloatingInfoBall:
             return
         if not self.was_dragged:
             self.was_dragged = True
-        self.root.geometry(f"+{win_x + dx}+{win_y + dy}")
+        self.set_window_position(win_x + dx, win_y + dy)
 
     def end_drag(self, event):
         if self.is_animating or not self.drag_start:

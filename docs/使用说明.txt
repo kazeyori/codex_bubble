@@ -36,7 +36,14 @@ scripts/uninstall_local_usage_startup.ps1
 - 右键单击：打开菜单
 - 菜单里可以切换 5小时 / 1周、刷新、展开收起、退出
 
-五、文件位置
+五、多屏使用
+
+- 可以把悬浮球拖到任意显示器。
+- 支持副屏在主屏左侧、右侧或上方。
+- 拖到副屏后会保存位置。
+- 右键菜单会在鼠标所在屏幕内弹出。
+
+六、文件位置
 
 - src/codex_bubble/floating_info_ball.py：悬浮球主程序
 - src/codex_bubble/codex_usage_fetcher.py：读取本机 Codex 会话快照
@@ -45,7 +52,7 @@ scripts/uninstall_local_usage_startup.ps1
 - data/codex_usage_data.json：本机运行时生成，不在分享包中预置
 - logs/：运行日志
 
-六、安全说明
+七、安全说明
 
 当前版本只读取本机 Codex 会话快照中的 rate_limits 字段。
 它不读取 cookie、token、auth.json、密码或浏览器登录状态。
