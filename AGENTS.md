@@ -14,6 +14,7 @@
 - 桌面 UI：`src/codex_bubble/floating_info_ball.py` 读取 `config/` 和 `data/`，展示 5 小时/1 周额度窗口。
 - 桌面 UI 启动时会自动确保后台同步器在运行；后台同步器必须有单实例锁，避免重复启动。
 - 用户入口：根目录只保留中文启动文件 `启动悬浮球.bat`。
+- 卸载入口：安装目录应包含中文卸载文件 `卸载悬浮球.bat`，普通用户不需要进入脚本目录。
 - 未连接状态：所有额度值和重置时间显示为 `-`，不要使用示例百分比伪装真实数据。
 
 ## 目录约定
@@ -27,6 +28,7 @@
 - `scripts/`：维护脚本使用英文命名。
 - `docs/`：中文说明文档和方案记录。
 - `scripts/installer/`：安装器内部脚本，负责当前用户安装、快捷方式和覆盖升级。
+- `docs/assets/codex-bubble.ico`：应用图标，安装器、快捷方式和 Tk 窗口应尽量共用这一个文件。
 - `releases/`：本地构建输出目录，发布产物不得提交到 Git；Release 由 CI 构建并上传安装器。
 - `VERSION`：当前版本号。
 - `CHANGELOG.md`：版本更新日志。
@@ -83,6 +85,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
 
 - 修改启动流程后至少检查这些脚本路径：
   - `启动悬浮球.bat`
+  - `卸载悬浮球.bat`
   - `scripts/run_codex_local_usage_once.bat`
   - `scripts/start_codex_usage_daemon_local.bat`
   - `scripts/install_local_usage_startup.ps1`
@@ -93,6 +96,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
 安装器内部 payload 应包含：
 
 - `启动悬浮球.bat`
+- `卸载悬浮球.bat`
 - `src/`
 - `config/`
 - `scripts/`
@@ -101,6 +105,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
 - `AGENTS.md`
 - `VERSION`
 - `CHANGELOG.md`
+- `docs/assets/codex-bubble.ico`
 
 安装器内部 payload 不应包含：
 

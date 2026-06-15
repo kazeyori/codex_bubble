@@ -5,7 +5,7 @@ Codex 额度悬浮球使用说明
 
 从 GitHub Release 下载：
 
-codex-bubble-setup-v0.1.3.exe
+codex-bubble-setup-v0.1.4.exe
 
 双击安装器完成安装。安装器会把程序安装到当前用户目录，并创建桌面和开始菜单快捷方式：
 
@@ -64,7 +64,20 @@ scripts/uninstall_local_usage_startup.ps1
 - 拖到副屏后会保存位置。
 - 右键菜单会在鼠标所在屏幕内弹出。
 
-七、文件位置
+七、卸载
+
+安装目录里有：
+
+卸载悬浮球.bat
+
+也可以在开始菜单点击：
+
+卸载 Codex 额度悬浮球
+
+卸载会退出悬浮球和后台同步器，删除安装目录和快捷方式。
+运行时配置、日志和额度缓存暂时保留在 %LOCALAPPDATA%\CodexBubble，方便后续重装继续使用原配置。
+
+八、文件位置
 
 - 默认安装目录：%LOCALAPPDATA%\Programs\CodexBubble
 - src/codex_bubble/floating_info_ball.py：悬浮球主程序
@@ -78,7 +91,7 @@ scripts/uninstall_local_usage_startup.ps1
 
 %LOCALAPPDATA%\CodexBubble
 
-八、安全说明
+九、安全说明
 
 当前版本只读取本机 Codex 会话快照中的 rate_limits 字段。
 它不读取 cookie、token、auth.json、密码或浏览器登录状态。

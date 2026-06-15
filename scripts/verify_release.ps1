@@ -15,6 +15,7 @@ if ([string]::IsNullOrWhiteSpace($InstallerPath)) {
   $InstallerPath = Join-Path $root "releases\codex-bubble-setup-v$version.exe"
 }
 $starterName = [string]::Concat([char[]](21551,21160,24748,28014,29699,46,98,97,116))
+$uninstallerName = [string]::Concat([char[]](21368,36733,24748,28014,29699,46,98,97,116))
 
 Write-Host "Checking Python syntax..."
 $pythonFiles = @(
@@ -47,6 +48,7 @@ $requiredFiles = @(
   "CHANGELOG.md",
   "VERSION",
   $starterName,
+  $uninstallerName,
   ".github\workflows\release.yml",
   "src\codex_bubble\runtime_paths.py",
   "src\codex_bubble\single_instance.py",
@@ -54,6 +56,8 @@ $requiredFiles = @(
   "scripts\installer\install.bat",
   "scripts\installer\install.ps1",
   "scripts\installer\InstallerBootstrapper.cs",
+  "scripts\uninstall_app.ps1",
+  "docs\assets\codex-bubble.ico",
   "docs\assets\preview-chip-five-hour.png",
   "docs\assets\preview-chip-weekly.png",
   "docs\assets\preview-panel.png"
@@ -103,6 +107,7 @@ try {
     "CHANGELOG.md",
     "VERSION",
     $starterName,
+    $uninstallerName,
     "src\codex_bubble\runtime_paths.py",
     "src\codex_bubble\single_instance.py",
     "src\codex_bubble\update_checker.py",
@@ -111,7 +116,9 @@ try {
     "src\codex_bubble\codex_usage_daemon.py",
     "docs\assets\preview-chip-five-hour.png",
     "docs\assets\preview-chip-weekly.png",
-    "docs\assets\preview-panel.png"
+    "docs\assets\preview-panel.png",
+    "docs\assets\codex-bubble.ico",
+    "scripts\uninstall_app.ps1"
   )
   foreach ($entry in $requiredEntries) {
     if ($entries -notcontains $entry) {
@@ -147,13 +154,29 @@ try {
   }
   foreach ($file in @(
     $starterName,
+    $uninstallerName,
     "src\codex_bubble\floating_info_ball.py",
     "src\codex_bubble\codex_usage_daemon.py",
+    "docs\assets\codex-bubble.ico",
+    "scripts\uninstall_app.ps1",
     "VERSION"
   )) {
     if (!(Test-Path -LiteralPath (Join-Path $testInstall $file))) {
       throw "Installer executable smoke test missing installed file: $file"
     }
+  }
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $testInstall "scripts\uninstall_app.ps1") -InstallRoot $testInstall -NoPrompt -Quiet
+  if ($LASTEXITCODE -ne 0) {
+    throw "Uninstaller smoke test failed."
+  }
+  for ($attempt = 0; $attempt -lt 20; $attempt++) {
+    if (!(Test-Path -LiteralPath $testInstall)) {
+      break
+    }
+    Start-Sleep -Milliseconds 250
+  }
+  if (Test-Path -LiteralPath $testInstall) {
+    throw "Uninstaller smoke test did not remove install directory."
   }
 }
 finally {

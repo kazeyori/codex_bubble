@@ -9,6 +9,8 @@ Add-Type -AssemblyName System.Windows.Forms
 $appName = "CodexBubble"
 $displayName = [string]::Concat([char[]](67,111,100,101,120,32,39069,24230,24748,28014,29699))
 $starterName = [string]::Concat([char[]](21551,21160,24748,28014,29699,46,98,97,116))
+$uninstallerName = [string]::Concat([char[]](21368,36733,24748,28014,29699,46,98,97,116))
+$uninstallShortcutName = [string]::Concat([char[]](21368,36733,32,67,111,100,101,120,32,39069,24230,24748,28014,29699,46,108,110,107))
 $installRoot = $env:CODEX_BUBBLE_INSTALL_ROOT
 if ([string]::IsNullOrWhiteSpace($installRoot)) {
   $installRoot = Join-Path $env:LOCALAPPDATA "Programs\CodexBubble"
@@ -53,21 +55,41 @@ try {
   Expand-Archive -LiteralPath $payload -DestinationPath $installRoot -Force
 
   $starter = Join-Path $installRoot $starterName
+  $uninstaller = Join-Path $installRoot $uninstallerName
+  $iconPath = Join-Path $installRoot "docs\assets\codex-bubble.ico"
   if (!(Test-Path -LiteralPath $starter)) {
     throw "Installed starter file is missing."
+  }
+  if (!(Test-Path -LiteralPath $uninstaller)) {
+    throw "Installed uninstaller file is missing."
   }
 
   if (!$Quiet) {
     $shortcutTargets = @(
-      (Join-Path ([Environment]::GetFolderPath("Desktop")) "$displayName.lnk"),
-      (Join-Path ([Environment]::GetFolderPath("Programs")) "$displayName.lnk")
+      @{
+        Path = Join-Path ([Environment]::GetFolderPath("Desktop")) "$displayName.lnk"
+        Target = $starter
+      },
+      @{
+        Path = Join-Path ([Environment]::GetFolderPath("Programs")) "$displayName.lnk"
+        Target = $starter
+      },
+      @{
+        Path = Join-Path ([Environment]::GetFolderPath("Programs")) $uninstallShortcutName
+        Target = $uninstaller
+      }
     )
     $shell = New-Object -ComObject WScript.Shell
-    foreach ($shortcutPath in $shortcutTargets) {
-      $shortcut = $shell.CreateShortcut($shortcutPath)
-      $shortcut.TargetPath = $starter
+    foreach ($shortcutSpec in $shortcutTargets) {
+      $shortcut = $shell.CreateShortcut($shortcutSpec.Path)
+      $shortcut.TargetPath = $shortcutSpec.Target
       $shortcut.WorkingDirectory = $installRoot
-      $shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,70"
+      if (Test-Path -LiteralPath $iconPath) {
+        $shortcut.IconLocation = $iconPath
+      }
+      else {
+        $shortcut.IconLocation = "$env:SystemRoot\System32\shell32.dll,70"
+      }
       $shortcut.Description = $displayName
       $shortcut.Save()
     }

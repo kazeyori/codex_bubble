@@ -13,6 +13,8 @@ $releaseDir = Join-Path $root "releases"
 $payloadZip = Join-Path $installerStage "codex-bubble-payload.zip"
 $installerExe = Join-Path $releaseDir "codex-bubble-setup-v$version.exe"
 $starterName = [string]::Concat([char[]](21551,21160,24748,28014,29699,46,98,97,116))
+$uninstallerName = [string]::Concat([char[]](21368,36733,24748,28014,29699,46,98,97,116))
+$iconPath = Join-Path $root "docs\assets\codex-bubble.ico"
 
 if (Test-Path -LiteralPath $work) {
   Remove-Item -LiteralPath $work -Recurse -Force
@@ -34,7 +36,8 @@ foreach ($item in @(
   "AGENTS.md",
   "CHANGELOG.md",
   "VERSION",
-  $starterName
+  $starterName,
+  $uninstallerName
 )) {
   Copy-Item -LiteralPath (Join-Path $root $item) -Destination $stage -Recurse -Force
 }
@@ -75,6 +78,7 @@ $installScriptPath = Join-Path $installerStage "install.ps1"
   /nologo `
   /target:winexe `
   /out:$installerExe `
+  /win32icon:$iconPath `
   /reference:System.Windows.Forms.dll `
   /resource:$payloadZip,codex-bubble-payload.zip `
   /resource:$installScriptPath,install.ps1 `

@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox
 
-from runtime_paths import CONFIG_PATH, DATA_PATH, DEFAULT_CONFIG_PATH, FLOATING_LOG_PATH
+from runtime_paths import CONFIG_PATH, DATA_PATH, DEFAULT_CONFIG_PATH, FLOATING_LOG_PATH, PROJECT_ROOT
 from single_instance import SingleInstance
 from update_checker import check_for_update, friendly_error
 
@@ -87,6 +87,8 @@ class FloatingInfoBall:
     def __init__(self):
         self.config_data = self.load_config()
         self.root = tk.Tk()
+        self.root.title("Codex 额度悬浮球")
+        self.apply_window_icon()
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
         self.root.attributes("-alpha", 1.0)
@@ -134,6 +136,14 @@ class FloatingInfoBall:
         self.render()
         self.schedule_refresh()
         self.root.after(3000, self.refresh_now)
+
+    def apply_window_icon(self):
+        icon_path = PROJECT_ROOT / "docs" / "assets" / "codex-bubble.ico"
+        try:
+            if icon_path.exists():
+                self.root.iconbitmap(str(icon_path))
+        except Exception:
+            pass
 
     def load_config(self):
         if not CONFIG_PATH.exists() and DEFAULT_CONFIG_PATH.exists():
