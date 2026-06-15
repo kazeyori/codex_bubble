@@ -1,11 +1,6 @@
-import base64
 import json
-import locale
 import os
-import subprocess
 import sys
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,38 +9,19 @@ APP_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = APP_DIR.parents[1]
 DATA_PATH = PROJECT_ROOT / "data" / "codex_usage_data.json"
 LOG_PATH = PROJECT_ROOT / "logs" / "codex_usage_fetcher.log"
-WHAM_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 
 LABEL_USAGE = "\u7528\u91cf"
 LABEL_FIVE_HOUR = "5\u5c0f\u65f6"
 LABEL_WEEKLY = "1\u5468"
 LABEL_DAY = "1\u5929"
 LABEL_MINUTE = "\u5206\u949f"
+UNKNOWN_VALUE = "-"
 
 
 def write_log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     LOG_PATH.write_text(f"[{timestamp}] {message}\n", encoding="utf-8")
-
-
-def decode_base64url(value):
-    padding = "=" * (-len(value) % 4)
-    return base64.urlsafe_b64decode((value + padding).encode("ascii"))
-
-
-def chatgpt_account_id_from_token(token):
-    parts = token.split(".")
-    if len(parts) < 2:
-        return None
-    try:
-        payload = json.loads(decode_base64url(parts[1]).decode("utf-8"))
-    except Exception:
-        return None
-    auth = payload.get("https://api.openai.com/auth")
-    if isinstance(auth, dict) and isinstance(auth.get("chatgpt_account_id"), str):
-        return auth["chatgpt_account_id"]
-    return None
 
 
 def percent_remaining_from_used(used_percent):
@@ -57,8 +33,8 @@ def percent_remaining_from_used(used_percent):
 
 
 def format_reset(value):
-    if value in (None, "", "--"):
-        return "--"
+    if value in (None, "", "-", "--"):
+        return UNKNOWN_VALUE
     try:
         timestamp = float(value)
         if timestamp > 10_000_000_000:
@@ -110,7 +86,7 @@ def normalize_codex_window(window, fallback_label):
         else:
             remaining = str(remaining)
     else:
-        remaining = "--"
+        remaining = UNKNOWN_VALUE
 
     return {
         "label": window_label(minutes=minutes, seconds=seconds, fallback=fallback_label),
@@ -142,7 +118,7 @@ def normalize_codex_rate_limit(payload):
     )
 
     return {
-        "data_source": "codex-rate-limits",
+        "data_source": "codex-local-sessions",
         "active_window": "five_hour",
         "usage_windows": {
             "five_hour": five_hour,
@@ -151,85 +127,11 @@ def normalize_codex_rate_limit(payload):
     }
 
 
-def normalize_payload(payload, source):
-    if "usage_windows" in payload:
-        payload.setdefault("data_source", source)
-        return payload
-
+def normalize_payload(payload):
     codex_payload = normalize_codex_rate_limit(payload)
     if codex_payload is not None:
-        codex_payload["data_source"] = source
         return codex_payload
-
-    five_hour = payload.get("five_hour") or payload.get("fiveHour") or {}
-    weekly = payload.get("weekly") or payload.get("week") or {}
-    if five_hour or weekly:
-        return {
-            "data_source": source,
-            "active_window": payload.get("active_window", "five_hour"),
-            "usage_windows": {
-                "five_hour": {
-                    "label": five_hour.get("label", LABEL_FIVE_HOUR),
-                    "remaining": str(five_hour.get("remaining", five_hour.get("percent", "--"))),
-                    "reset": str(five_hour.get("reset", five_hour.get("resets_at", "--"))),
-                },
-                "weekly": {
-                    "label": weekly.get("label", LABEL_WEEKLY),
-                    "remaining": str(weekly.get("remaining", weekly.get("percent", "--"))),
-                    "reset": str(weekly.get("reset", weekly.get("resets_at", "--"))),
-                },
-            },
-        }
-
-    raise ValueError("Payload does not contain usage data.")
-
-
-def fetch_from_command():
-    command = os.environ.get("CODEX_USAGE_COMMAND")
-    if not command:
-        return None
-    completed = subprocess.run(
-        command,
-        shell=True,
-        check=True,
-        capture_output=True,
-    )
-    raw = completed.stdout
-    for encoding in ("utf-8", locale.getpreferredencoding(False), "gbk"):
-        try:
-            text = raw.decode(encoding)
-            break
-        except UnicodeDecodeError:
-            text = ""
-    if not text:
-        text = raw.decode("utf-8", errors="replace")
-    return normalize_payload(json.loads(text), "cli")
-
-
-def fetch_from_http():
-    source = os.environ.get("CODEX_USAGE_SOURCE", "").strip().lower()
-    url = os.environ.get("CODEX_USAGE_URL")
-    token = os.environ.get("CODEX_ACCESS_TOKEN")
-    if source == "wham" and not url:
-        url = WHAM_USAGE_URL
-    if not url:
-        return None
-
-    headers = {
-        "Accept": "application/json",
-        "originator": "codex_desktop",
-        "User-Agent": "Codex Desktop floating usage helper",
-    }
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-        account_id = chatgpt_account_id_from_token(token)
-        if account_id:
-            headers["ChatGPT-Account-Id"] = account_id
-
-    request = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(request, timeout=15) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    return normalize_payload(payload, "api")
+    raise ValueError("Payload does not contain Codex rate-limit data.")
 
 
 def parse_event_timestamp(value, fallback):
@@ -297,7 +199,7 @@ def fetch_from_codex_sessions():
     if latest is None:
         return None
     event_ts, rate_limits, source_path = latest
-    payload = normalize_payload({"rate_limits": rate_limits}, "codex-local-sessions")
+    payload = normalize_payload({"rate_limits": rate_limits})
     payload["snapshot_time"] = datetime.fromtimestamp(event_ts, tz=timezone.utc).isoformat()
     payload["snapshot_source"] = source_path
     return payload
@@ -305,20 +207,9 @@ def fetch_from_codex_sessions():
 
 def main():
     try:
-        source = os.environ.get("CODEX_USAGE_SOURCE", "").strip().lower()
-        if source in {"codex_sessions", "sessions", "local_sessions"}:
-            payload = fetch_from_codex_sessions()
-        else:
-            payload = fetch_from_command()
-            if payload is None:
-                payload = fetch_from_http()
-            if payload is None and source not in {"wham", "http", "api"}:
-                payload = fetch_from_codex_sessions()
-
+        payload = fetch_from_codex_sessions()
         if payload is None:
-            raise RuntimeError(
-                "No Codex rate-limit data found. Use Codex once, or set CODEX_USAGE_COMMAND/CODEX_USAGE_URL."
-            )
+            raise RuntimeError("No local Codex rate-limit data found. Use Codex once, then refresh.")
 
         DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
         DATA_PATH.write_text(
@@ -326,7 +217,7 @@ def main():
             encoding="utf-8",
         )
         print(f"wrote {DATA_PATH}")
-    except (urllib.error.HTTPError, urllib.error.URLError, Exception) as exc:
+    except Exception as exc:
         write_log(f"{type(exc).__name__}: {exc}")
         print(f"failed: {exc}", file=sys.stderr)
         return 1

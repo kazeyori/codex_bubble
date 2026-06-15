@@ -57,5 +57,7 @@ powershell -ExecutionPolicy Bypass -File scripts\uninstall_local_usage_startup.p
 - 读取 cookie
 - 读取 token
 - 读取 auth.json
+- 执行 `CODEX_USAGE_COMMAND`
+- 使用 `CODEX_ACCESS_TOKEN`
 - 调用需要用户登录凭据的远程接口
 - 把本机额度数据预置进分享包

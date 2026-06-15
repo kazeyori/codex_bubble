@@ -19,8 +19,8 @@ DEFAULT_CONFIG = {
     "active_window": "five_hour",
     "data_source": "static",
     "usage_windows": {
-        "five_hour": {"label": "5小时", "remaining": "89%", "reset": "17:57"},
-        "weekly": {"label": "1周", "remaining": "95%", "reset": "6月22日"},
+        "five_hour": {"label": "5小时", "remaining": "-", "reset": "-"},
+        "weekly": {"label": "1周", "remaining": "-", "reset": "-"},
     },
     "position": {"x": 1380, "y": 220},
     "colors": {
@@ -45,6 +45,13 @@ def deep_merge(base, update):
         else:
             result[key] = value
     return result
+
+
+def disconnected_usage_windows():
+    return {
+        "five_hour": {"label": "5小时", "remaining": "-", "reset": "-"},
+        "weekly": {"label": "1周", "remaining": "-", "reset": "-"},
+    }
 
 
 class FloatingInfoBall:
@@ -112,14 +119,14 @@ class FloatingInfoBall:
                 if len(rows) > 0:
                     merged["usage_windows"]["five_hour"] = {
                         "label": rows[0].get("left", "5小时"),
-                        "remaining": rows[0].get("middle", "--"),
-                        "reset": rows[0].get("right", "--"),
+                        "remaining": rows[0].get("middle", "-"),
+                        "reset": rows[0].get("right", "-"),
                     }
                 if len(rows) > 1:
                     merged["usage_windows"]["weekly"] = {
                         "label": rows[1].get("left", "1周"),
-                        "remaining": rows[1].get("middle", "--"),
-                        "reset": rows[1].get("right", "--"),
+                        "remaining": rows[1].get("middle", "-"),
+                        "reset": rows[1].get("right", "-"),
                     }
             return merged
         except Exception:
@@ -130,6 +137,7 @@ class FloatingInfoBall:
     def load_usage_data(self):
         if not DATA_PATH.exists():
             self.config_data["data_source"] = "static"
+            self.config_data["usage_windows"] = disconnected_usage_windows()
             return
         try:
             data = json.loads(DATA_PATH.read_text(encoding="utf-8-sig"))
@@ -142,13 +150,18 @@ class FloatingInfoBall:
                 self.config_data["active_window"] = data["active_window"]
             self.config_data["data_source"] = data.get("data_source", "file")
         except Exception:
+            self.config_data["data_source"] = "static"
+            self.config_data["usage_windows"] = disconnected_usage_windows()
             LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
 
     def save_config(self):
+        saved_config = deep_merge(DEFAULT_CONFIG, self.config_data)
+        saved_config["data_source"] = "static"
+        saved_config["usage_windows"] = disconnected_usage_windows()
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(
-            json.dumps(self.config_data, ensure_ascii=False, indent=2),
+            json.dumps(saved_config, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
@@ -199,9 +212,9 @@ class FloatingInfoBall:
         windows = self.config_data.get("usage_windows", {})
         active = self.config_data.get("active_window", "five_hour")
         return windows.get(active) or windows.get("five_hour") or {
-            "label": "--",
-            "remaining": "--",
-            "reset": "--",
+            "label": "-",
+            "remaining": "-",
+            "reset": "-",
         }
 
     def usage_rows(self):

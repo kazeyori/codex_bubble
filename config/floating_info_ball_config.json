@@ -2,22 +2,22 @@
   "collapsed": true,
   "refresh_label": "刷新",
   "active_window": "five_hour",
-  "data_source": "codex-local-sessions",
+  "data_source": "static",
   "usage_windows": {
     "five_hour": {
       "label": "5小时",
-      "remaining": "70%",
-      "reset": "17:57"
+      "remaining": "-",
+      "reset": "-"
     },
     "weekly": {
       "label": "1周",
-      "remaining": "92%",
-      "reset": "6月22日"
+      "remaining": "-",
+      "reset": "-"
     }
   },
   "position": {
-    "x": 2396,
-    "y": 1337
+    "x": 1380,
+    "y": 220
   },
   "colors": {
     "accent": "#007AFF",

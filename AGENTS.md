@@ -4,7 +4,7 @@
 
 这个项目是一个本地 Windows 桌面小工具：用 Tkinter 做悬浮球，用本机 Codex 会话快照中的 `token_count.rate_limits` 展示额度窗口。
 
-第一原则：安全和可解释性优先。不要读取浏览器 cookie、登录 token、`auth.json`、密码、会话密钥或其他敏感凭据。不要把 `data/`、`logs/` 中的本机运行数据打进发布包。
+第一原则：安全和可解释性优先。不要读取浏览器 cookie、登录 token、`auth.json`、密码、会话密钥或其他敏感凭据。不要关闭、重启、杀掉或控制 Codex 进程。不要把 `data/`、`logs/` 中的本机运行数据打进发布包。
 
 ## 当前正确方案
 
@@ -13,6 +13,7 @@
 - 后台同步：`src/codex_bubble/codex_usage_daemon.py` 每 60 秒运行一次读取器。
 - 桌面 UI：`src/codex_bubble/floating_info_ball.py` 读取 `config/` 和 `data/`，展示 5 小时/1 周额度窗口。
 - 用户入口：根目录只保留中文启动文件 `启动悬浮球.bat`。
+- 未连接状态：所有额度值和重置时间显示为 `-`，不要使用示例百分比伪装真实数据。
 
 ## 目录约定
 
@@ -36,6 +37,9 @@
 
 - 不接入 cookie/token/auth.json。
 - 不引导用户导出或粘贴敏感凭据。
+- 不执行用户环境变量提供的额度命令。
+- 不调用 ChatGPT/Codex 远程额度接口。
+- 不关闭、重启、杀掉或控制 Codex 进程。
 - 不把本机 `data/codex_usage_data.json`、日志、缓存、`.git` 打包。
 - 不为了视觉效果引入重型 GUI 框架，除非明确决定重写桌面端。
 

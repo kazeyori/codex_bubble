@@ -11,6 +11,8 @@ Codex 额度悬浮球使用说明
 
 二、如果显示“未连接”
 
+额度和重置时间会显示为“-”，这是正常的未连接占位。
+
 先在这台电脑上使用 Codex 发一条消息，然后等待一分钟。
 
 也可以手动运行：
@@ -47,3 +49,4 @@ scripts/uninstall_local_usage_startup.ps1
 
 当前版本只读取本机 Codex 会话快照中的 rate_limits 字段。
 它不读取 cookie、token、auth.json、密码或浏览器登录状态。
+它也不会关闭、重启或控制 Codex 程序。
