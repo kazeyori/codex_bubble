@@ -41,10 +41,12 @@ if (!$NoLaunch) {
   foreach ($process in $oldProcesses) {
     try {
       Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+      Wait-Process -Id $process.ProcessId -Timeout 5 -ErrorAction SilentlyContinue
     }
     catch {
     }
   }
+  Start-Sleep -Milliseconds 500
 }
 
 $backupRoot = $null

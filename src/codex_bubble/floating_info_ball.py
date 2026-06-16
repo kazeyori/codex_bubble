@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+import tempfile
 import threading
 import traceback
 import tkinter as tk
@@ -1373,15 +1374,32 @@ class FloatingInfoBall:
 
     def launch_update_installer(self, installer_path):
         try:
+            installer_path = Path(installer_path)
+            installer_cmd_path = str(installer_path).replace("%", "%%")
+            launcher_path = Path(tempfile.gettempdir()) / "CodexBubble" / "updates" / "launch_update_installer.cmd"
+            launcher_path.parent.mkdir(parents=True, exist_ok=True)
+            launcher_path.write_text(
+                "\n".join(
+                    [
+                        "@echo off",
+                        "setlocal",
+                        "timeout /t 1 /nobreak >nul",
+                        f'start "" "{installer_cmd_path}"',
+                        'del "%~f0" >nul 2>nul',
+                    ]
+                )
+                + "\n",
+                encoding="ascii",
+            )
             subprocess.Popen(
-                [str(installer_path)],
-                cwd=str(Path(installer_path).parent),
+                ["cmd.exe", "/c", str(launcher_path)],
+                cwd=str(launcher_path.parent),
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 creationflags=CREATE_NO_WINDOW,
             )
-            self.root.after(500, self.quit)
+            self.root.after(100, self.quit)
         except Exception:
             LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
