@@ -5,7 +5,7 @@ import threading
 import traceback
 import tkinter as tk
 import webbrowser
-from ctypes import WINFUNCTYPE, Structure, byref, c_int, c_ulong, sizeof, windll, wintypes
+from ctypes import WINFUNCTYPE, Structure, byref, c_int, c_ulong, c_void_p, sizeof, windll, wintypes
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox
@@ -259,7 +259,7 @@ class FloatingInfoBall:
         def callback(monitor, _hdc, _rect, _data):
             info = MonitorInfo()
             info.cbSize = c_ulong(sizeof(MonitorInfo))
-            if windll.user32.GetMonitorInfoW(monitor, byref(info)):
+            if windll.user32.GetMonitorInfoW(c_void_p(monitor), byref(info)):
                 monitors.append(rect_to_tuple(info.rcWork))
             return 1
 
