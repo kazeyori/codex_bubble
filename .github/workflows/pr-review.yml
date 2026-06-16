@@ -1,0 +1,61 @@
+name: PR Review Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify installer and release safety
+    runs-on: windows-latest
+    if: github.event.pull_request.draft != true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check whitespace in PR diff
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          git fetch origin ${{ github.base_ref }} --depth=1
+          git diff --check FETCH_HEAD...HEAD
+
+      - name: Build and verify installer
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
+
+      - name: Resolve installer path
+        id: installer
+        shell: pwsh
+        run: |
+          $version = (Get-Content -LiteralPath VERSION -Raw).Trim()
+          $installer = "releases/codex-bubble-setup-v$version.exe"
+          if (!(Test-Path -LiteralPath $installer)) {
+            throw "Installer not found after verification: $installer"
+          }
+          "path=$installer" >> $env:GITHUB_OUTPUT
+          "name=codex-bubble-setup-v$version" >> $env:GITHUB_OUTPUT
+
+      - name: Upload verified installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.installer.outputs.name }}
+          path: ${{ steps.installer.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7

@@ -122,6 +122,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
 
 - 使用 `scripts\build_release.ps1` 生成安装器。
 - 使用 `scripts\verify_release.ps1` 核验安装器和内部 payload。
+- PR 必须等待 `.github/workflows/pr-review.yml` 的 `PR Review Gate` 通过；该门禁会跑空白检查、安装器构建、payload 检查、临时安装和卸载烟测，并上传短期安装器 artifact 供人工检查。
 - 核验失败时禁止推送 `v*` tag。
 - 核验失败时禁止触发 GitHub Release。
 - GitHub Actions 必须在 tag 触发后现场构建安装器并上传 `.exe`，不要要求仓库里预先提交二进制发布包。
