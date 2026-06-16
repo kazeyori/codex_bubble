@@ -5,7 +5,7 @@ Codex 额度悬浮球使用说明
 
 从 GitHub Release 下载：
 
-codex-bubble-setup-v0.1.4.exe
+codex-bubble-setup-v0.1.5.exe
 
 双击安装器完成安装。安装器会把程序安装到当前用户目录，并创建桌面和开始菜单快捷方式：
 
