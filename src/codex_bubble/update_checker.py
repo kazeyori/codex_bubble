@@ -1,8 +1,10 @@
 import json
 import re
+import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 
 from runtime_paths import PROJECT_ROOT
 
@@ -12,6 +14,8 @@ REPO_RELEASES_URL = "https://github.com/chinnkenni/codex_bubble/releases/latest"
 REPO_RELEASE_TAG_URL = "https://github.com/chinnkenni/codex_bubble/releases/tag/{tag}"
 REPO_DOWNLOAD_URL = "https://github.com/chinnkenni/codex_bubble/releases/download/{tag}/codex-bubble-setup-{tag}.exe"
 REQUEST_TIMEOUT_SECONDS = 8
+DOWNLOAD_TIMEOUT_SECONDS = 60
+DOWNLOAD_CHUNK_SIZE = 1024 * 256
 
 
 @dataclass
@@ -136,6 +140,60 @@ def check_for_update():
         asset_url=asset_url,
         release_name=release_data.get("name", ""),
     )
+
+
+def update_installer_path(update_info):
+    tag = f"v{normalize_version(update_info.latest_version)}"
+    update_dir = Path(tempfile.gettempdir()) / "CodexBubble" / "updates" / tag
+    update_dir.mkdir(parents=True, exist_ok=True)
+    return update_dir / f"codex-bubble-setup-{tag}.exe"
+
+
+def download_update_installer(update_info, progress_callback=None):
+    if not update_info.asset_url:
+        raise ValueError("没有找到新版安装器下载地址。")
+
+    target_path = update_installer_path(update_info)
+    temp_path = target_path.with_name(target_path.name + ".download")
+    request = urllib.request.Request(
+        update_info.asset_url,
+        headers={
+            "Accept": "application/octet-stream",
+            "User-Agent": "CodexBubble",
+        },
+    )
+
+    downloaded = 0
+    total = 0
+    try:
+        with urllib.request.urlopen(request, timeout=DOWNLOAD_TIMEOUT_SECONDS) as response:
+            total_text = response.headers.get("Content-Length") or ""
+            if total_text.isdigit():
+                total = int(total_text)
+            if progress_callback:
+                progress_callback(downloaded, total)
+            with temp_path.open("wb") as output:
+                while True:
+                    chunk = response.read(DOWNLOAD_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    output.write(chunk)
+                    downloaded += len(chunk)
+                    if progress_callback:
+                        progress_callback(downloaded, total)
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+    if downloaded <= 0:
+        temp_path.unlink(missing_ok=True)
+        raise RuntimeError("下载到的安装器为空。")
+    if total and downloaded < total:
+        temp_path.unlink(missing_ok=True)
+        raise RuntimeError("安装器下载不完整。")
+
+    temp_path.replace(target_path)
+    return target_path
 
 
 def friendly_error(error):

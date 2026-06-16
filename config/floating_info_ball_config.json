@@ -28,6 +28,7 @@
     "glass_soft": "#FFFFFF",
     "text": "#111111",
     "muted": "#8E8E93",
+    "subtle": "#B8B8BE",
     "line": "#D9D9DE",
     "shadow": "#C7C7CC",
     "warning": "#FF9500",

@@ -62,8 +62,10 @@ $requiredFiles = @(
   "docs\assets\preview-chip-weekly.png",
   "docs\assets\preview-chip-combined.png",
   "docs\assets\preview-panel.png",
+  "docs\assets\preview-context-menu.png",
   "docs\assets\preview-update-badge.png",
   "docs\assets\preview-update-panel.png",
+  "docs\assets\preview-update-download-progress.png",
   "docs\assets\preview-update-tray-menu.png"
 )
 foreach ($file in $requiredFiles) {
@@ -122,8 +124,10 @@ try {
     "docs\assets\preview-chip-weekly.png",
     "docs\assets\preview-chip-combined.png",
     "docs\assets\preview-panel.png",
+    "docs\assets\preview-context-menu.png",
     "docs\assets\preview-update-badge.png",
     "docs\assets\preview-update-panel.png",
+    "docs\assets\preview-update-download-progress.png",
     "docs\assets\preview-update-tray-menu.png",
     "docs\assets\codex-bubble.ico",
     "scripts\uninstall_app.ps1"

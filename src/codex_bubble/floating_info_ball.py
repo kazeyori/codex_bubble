@@ -23,7 +23,7 @@ from tkinter import messagebox
 
 from runtime_paths import CONFIG_PATH, DATA_PATH, DEFAULT_CONFIG_PATH, FLOATING_LOG_PATH, PROJECT_ROOT
 from single_instance import SingleInstance
-from update_checker import check_for_update, friendly_error
+from update_checker import check_for_update, download_update_installer, friendly_error, read_current_version
 
 LOG_PATH = FLOATING_LOG_PATH
 TRANSPARENT = "#010203"
@@ -59,7 +59,7 @@ GA_ROOT = 2
 DEFAULT_TRAY_TIP = "Codex 额度悬浮球 - 双击定位"
 UPDATE_BADGE_TARGET = "__open_update__"
 UPDATE_STARTUP_DELAY_MS = 15000
-UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
+UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
 
 DEFAULT_CONFIG = {
     "collapsed": True,
@@ -78,6 +78,7 @@ DEFAULT_CONFIG = {
         "glass_soft": "#FFFFFF",
         "text": "#111111",
         "muted": "#8E8E93",
+        "subtle": "#B8B8BE",
         "line": "#D9D9DE",
         "shadow": "#C7C7CC",
         "warning": "#FF9500",
@@ -370,8 +371,10 @@ class FloatingInfoBall:
         self.drag_threshold = 10
         self.is_animating = False
         self.update_checking = False
+        self.update_downloading = False
         self.update_info = None
         self.update_notice_shown = False
+        self.update_download_dialog = None
         self.location_hint = None
         self.menu = None
         self.tray_icon = TrayIcon(self.root, self.locate_from_tray, self.show_tray_menu)
@@ -791,9 +794,11 @@ class FloatingInfoBall:
         lines = []
         for key, row in rows[:2]:
             lines.append(
-                f"{self.compact_window_label(key, row)} "
-                f"{row.get('remaining', '-')} "
-                f"{self.compact_reset_text(row.get('reset', '-'))}"
+                {
+                    "label": self.compact_window_label(key, row),
+                    "remaining": str(row.get("remaining", "-")),
+                    "reset": self.compact_reset_text(row.get("reset", "-")),
+                }
             )
         return lines
 
@@ -849,7 +854,7 @@ class FloatingInfoBall:
         return bool(self.update_info and self.update_info.has_update)
 
     def update_badge_label(self):
-        return "升级"
+        return "更新"
 
     def draw_update_badge(self, x, y, width=44, height=22):
         colors = self.config_data["colors"]
@@ -883,6 +888,7 @@ class FloatingInfoBall:
 
     def render_chip(self):
         colors = self.config_data["colors"]
+        subtle = colors.get("subtle", "#B8B8BE")
         rows = self.visible_usage_rows()
         single_row = len(rows) <= 1
         row = rows[0][1] if rows else self.active_usage()
@@ -918,12 +924,12 @@ class FloatingInfoBall:
                 font=self.font_chip,
                 anchor="e",
             )
-            self.draw_reset_glyph(text_x, 37, colors["muted"])
+            self.draw_reset_glyph(text_x, 37, subtle)
             self.canvas.create_text(
                 text_x + 14,
                 37,
                 text=str(row.get("reset", "")),
-                fill=colors["muted"],
+                fill=subtle,
                 font=self.font_refresh,
                 anchor="w",
             )
@@ -938,15 +944,35 @@ class FloatingInfoBall:
                 anchor="w",
             )
         else:
+            label_x = text_x
+            remaining_x = text_x + 25
+            reset_x = text_x + 58
             for index, line in enumerate(self.compact_usage_lines(rows)):
+                y = 18 + index * 19
                 self.canvas.create_text(
-                    text_x,
-                    18 + index * 19,
-                    text=line,
+                    label_x,
+                    y,
+                    text=line["label"],
                     fill=colors["text"],
                     font=self.font_compact,
                     anchor="w",
-            )
+                )
+                self.canvas.create_text(
+                    remaining_x,
+                    y,
+                    text=line["remaining"],
+                    fill=colors["text"],
+                    font=self.font_compact,
+                    anchor="w",
+                )
+                self.canvas.create_text(
+                    reset_x,
+                    y,
+                    text=line["reset"],
+                    fill=subtle,
+                    font=self.font_compact_refresh,
+                    anchor="w",
+                )
             refresh_x = width - 51
             self.draw_refresh_glyph(refresh_x, 41, colors["muted"])
             self.canvas.create_text(
@@ -1174,17 +1200,18 @@ class FloatingInfoBall:
             if not self.update_notice_shown:
                 self.tray_icon.show_balloon(
                     "发现新版本",
-                    f"v{update_info.latest_version} 可升级，点击悬浮球上的“升级”标记或右键托盘打开下载。",
+                    f"v{update_info.latest_version} 可更新，点击“更新”后可下载并安装。",
                 )
                 self.update_notice_shown = True
             self.render()
             message = (
                 f"发现新版本 v{update_info.latest_version}\n"
                 f"当前版本 v{update_info.current_version}\n\n"
-                "是否打开下载页面？"
+                "是否下载新版安装器？\n"
+                "下载完成后会再询问是否立即安装。"
             )
             if interactive and messagebox.askyesno("发现更新", message):
-                self.open_update_download()
+                self.open_update_download(confirm=False)
             return
 
         self.update_info = None
@@ -1197,11 +1224,168 @@ class FloatingInfoBall:
                 f"当前已是最新版本 v{update_info.current_version}",
             )
 
-    def open_update_download(self):
+    def open_update_download(self, confirm=True):
         if not self.has_pending_update():
             self.check_update_now(interactive=True)
             return
-        webbrowser.open(self.update_info.asset_url or self.update_info.release_url)
+        if self.update_downloading:
+            messagebox.showinfo("下载更新", "新版安装器正在下载，请稍等。")
+            return
+        if not self.update_info.asset_url:
+            messagebox.showwarning("下载更新", "没有找到新版安装器下载地址，将打开 Release 页面。")
+            webbrowser.open(self.update_info.release_url)
+            return
+        if confirm:
+            message = (
+                f"将下载 v{self.update_info.latest_version} 安装器到临时目录。\n"
+                "下载完成后会再询问是否立即安装。\n\n"
+                "是否开始下载？"
+            )
+            if not messagebox.askyesno("下载更新", message):
+                return
+        self.start_update_download()
+
+    def start_update_download(self):
+        self.update_downloading = True
+        self.show_update_download_dialog()
+        self.tray_icon.show_balloon("下载更新", f"正在下载 v{self.update_info.latest_version} 安装器。")
+        thread = threading.Thread(target=self.download_update_worker, daemon=True)
+        thread.start()
+
+    def download_update_worker(self):
+        try:
+            update_info = self.update_info
+
+            def report(downloaded, total):
+                self.root.after(
+                    1,
+                    lambda downloaded=downloaded, total=total: self.update_download_progress(downloaded, total),
+                )
+
+            installer_path = download_update_installer(update_info, progress_callback=report)
+            self.root.after(1, lambda: self.finish_update_download(installer_path))
+        except Exception as error:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
+            self.root.after(1, lambda error=error: self.handle_update_download_error(error))
+
+    def format_download_size(self, value):
+        value = max(0, int(value or 0))
+        if value >= 1024 * 1024:
+            return f"{value / 1024 / 1024:.1f} MB"
+        if value >= 1024:
+            return f"{value / 1024:.0f} KB"
+        return f"{value} B"
+
+    def show_update_download_dialog(self):
+        self.close_update_download_dialog()
+        colors = self.config_data["colors"]
+        dialog = tk.Toplevel(self.root)
+        dialog.title("下载更新")
+        dialog.resizable(False, False)
+        dialog.attributes("-topmost", True)
+        dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+        dialog.configure(bg=colors["glass"])
+
+        frame = tk.Frame(dialog, bg=colors["glass"], padx=18, pady=16)
+        frame.pack(fill="both", expand=True)
+        title = tk.Label(
+            frame,
+            text=f"正在下载 v{self.update_info.latest_version}",
+            bg=colors["glass"],
+            fg=colors["text"],
+            font=("Microsoft YaHei UI", 10, "bold"),
+            anchor="w",
+        )
+        title.pack(fill="x")
+        status = tk.Label(
+            frame,
+            text="准备下载...",
+            bg=colors["glass"],
+            fg=colors["muted"],
+            font=("Microsoft YaHei UI", 9),
+            anchor="w",
+        )
+        status.pack(fill="x", pady=(8, 6))
+        canvas = tk.Canvas(frame, width=280, height=10, bg=colors["glass"], highlightthickness=0, bd=0)
+        canvas.pack(fill="x")
+        canvas.create_rectangle(0, 2, 280, 8, fill=colors["line"], outline="")
+        progress = canvas.create_rectangle(0, 2, 0, 8, fill=colors["accent"], outline="")
+
+        dialog.update_idletasks()
+        x = self.root.winfo_x() + max(0, int((self.root.winfo_width() - dialog.winfo_width()) / 2))
+        y = self.root.winfo_y() + self.root.winfo_height() + 10
+        dialog.geometry(f"+{x}+{y}")
+
+        self.update_download_dialog = {
+            "window": dialog,
+            "status": status,
+            "canvas": canvas,
+            "progress": progress,
+        }
+
+    def update_download_progress(self, downloaded, total):
+        dialog = self.update_download_dialog
+        if not dialog:
+            return
+        status = dialog["status"]
+        canvas = dialog["canvas"]
+        progress = dialog["progress"]
+        if total:
+            ratio = max(0, min(1, downloaded / total))
+            status.configure(
+                text=(
+                    f"{self.format_download_size(downloaded)} / "
+                    f"{self.format_download_size(total)} ({ratio * 100:.0f}%)"
+                )
+            )
+            canvas.coords(progress, 0, 2, int(280 * ratio), 8)
+        else:
+            status.configure(text=f"已下载 {self.format_download_size(downloaded)}")
+            canvas.coords(progress, 0, 2, 140, 8)
+
+    def close_update_download_dialog(self):
+        dialog = self.update_download_dialog
+        self.update_download_dialog = None
+        if dialog:
+            try:
+                dialog["window"].destroy()
+            except Exception:
+                pass
+
+    def finish_update_download(self, installer_path):
+        self.update_downloading = False
+        self.update_download_progress(1, 1)
+        self.close_update_download_dialog()
+        message = (
+            f"新版安装器已下载完成：\n{installer_path}\n\n"
+            "是否立即安装？安装器会退出当前悬浮球并覆盖安装。"
+        )
+        if messagebox.askyesno("下载完成", message):
+            self.launch_update_installer(installer_path)
+
+    def handle_update_download_error(self, error):
+        self.update_downloading = False
+        self.close_update_download_dialog()
+        message = f"下载新版安装器失败：\n{error}\n\n是否打开 Release 下载页面？"
+        if messagebox.askyesno("下载失败", message):
+            webbrowser.open(self.update_info.asset_url or self.update_info.release_url)
+
+    def launch_update_installer(self, installer_path):
+        try:
+            subprocess.Popen(
+                [str(installer_path)],
+                cwd=str(Path(installer_path).parent),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=CREATE_NO_WINDOW,
+            )
+            self.root.after(500, self.quit)
+        except Exception:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
+            messagebox.showerror("启动安装器失败", "安装器已下载，但启动失败，请到临时目录中手动运行。")
 
     def locate_from_tray(self):
         self.close_menu()
@@ -1233,7 +1417,7 @@ class FloatingInfoBall:
         menu = tk.Menu(self.root, tearoff=0)
         if self.has_pending_update():
             menu.add_command(
-                label=f"升级到 v{self.update_info.latest_version}",
+                label=f"更新到 v{self.update_info.latest_version}",
                 command=lambda: self.run_menu_action(self.open_update_download),
             )
             menu.add_separator()
@@ -1350,10 +1534,11 @@ class FloatingInfoBall:
         menu.add_command(label="刷新", command=lambda: self.run_menu_action(self.refresh_now))
         if self.has_pending_update():
             menu.add_command(
-                label=f"升级到 v{self.update_info.latest_version}",
+                label=f"更新到 v{self.update_info.latest_version}",
                 command=lambda: self.run_menu_action(self.open_update_download),
             )
         menu.add_command(label="检查更新", command=lambda: self.run_menu_action(self.check_update_now))
+        menu.add_command(label=f"当前版本 v{read_current_version()}", state="disabled")
         menu.add_command(
             label="数据源: " + ("静态" if self.config_data.get("data_source") == "static" else "文件"),
             command=lambda: self.run_menu_action(self.refresh_now),
