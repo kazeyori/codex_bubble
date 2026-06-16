@@ -5,7 +5,18 @@ import threading
 import traceback
 import tkinter as tk
 import webbrowser
-from ctypes import WINFUNCTYPE, Structure, byref, c_int, c_ulong, c_void_p, sizeof, windll, wintypes
+from ctypes import (
+    WINFUNCTYPE,
+    Structure,
+    byref,
+    c_int,
+    c_uint,
+    c_ulong,
+    c_void_p,
+    sizeof,
+    windll,
+    wintypes,
+)
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox
@@ -19,6 +30,32 @@ TRANSPARENT = "#010203"
 SCREEN_MARGIN = 8
 DEFAULT_POSITION = {"x": 1380, "y": 220}
 CREATE_NO_WINDOW = 0x08000000
+WM_DESTROY = 0x0002
+WM_CLOSE = 0x0010
+WM_USER = 0x0400
+WM_TRAY_MESSAGE = WM_USER + 23
+WM_LBUTTONDBLCLK = 0x0203
+WM_RBUTTONUP = 0x0205
+NIM_ADD = 0x00000000
+NIM_MODIFY = 0x00000001
+NIM_DELETE = 0x00000002
+NIF_MESSAGE = 0x00000001
+NIF_ICON = 0x00000002
+NIF_TIP = 0x00000004
+NIF_INFO = 0x00000010
+NIIF_INFO = 0x00000001
+IMAGE_ICON = 1
+LR_LOADFROMFILE = 0x00000010
+LR_DEFAULTSIZE = 0x00000040
+IDI_APPLICATION = 32512
+GWL_EXSTYLE = -20
+WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_APPWINDOW = 0x00040000
+SWP_NOMOVE = 0x0002
+SWP_NOSIZE = 0x0001
+SWP_NOZORDER = 0x0004
+SWP_FRAMECHANGED = 0x0020
+GA_ROOT = 2
 
 DEFAULT_CONFIG = {
     "collapsed": True,
@@ -83,6 +120,214 @@ def rect_to_tuple(rect):
     return (rect.left, rect.top, rect.right, rect.bottom)
 
 
+class NotifyIconData(Structure):
+    _fields_ = [
+        ("cbSize", wintypes.DWORD),
+        ("hWnd", wintypes.HWND),
+        ("uID", wintypes.UINT),
+        ("uFlags", wintypes.UINT),
+        ("uCallbackMessage", wintypes.UINT),
+        ("hIcon", wintypes.HICON),
+        ("szTip", wintypes.WCHAR * 128),
+        ("dwState", wintypes.DWORD),
+        ("dwStateMask", wintypes.DWORD),
+        ("szInfo", wintypes.WCHAR * 256),
+        ("uTimeoutOrVersion", wintypes.UINT),
+        ("szInfoTitle", wintypes.WCHAR * 64),
+        ("dwInfoFlags", wintypes.DWORD),
+        ("guidItem", wintypes.BYTE * 16),
+        ("hBalloonIcon", wintypes.HICON),
+    ]
+
+
+WNDPROC = WINFUNCTYPE(wintypes.LPARAM, wintypes.HWND, c_uint, wintypes.WPARAM, wintypes.LPARAM)
+
+
+class WindowClass(Structure):
+    _fields_ = [
+        ("style", wintypes.UINT),
+        ("lpfnWndProc", WNDPROC),
+        ("cbClsExtra", c_int),
+        ("cbWndExtra", c_int),
+        ("hInstance", wintypes.HINSTANCE),
+        ("hIcon", wintypes.HICON),
+        ("hCursor", wintypes.HANDLE),
+        ("hbrBackground", wintypes.HANDLE),
+        ("lpszMenuName", wintypes.LPCWSTR),
+        ("lpszClassName", wintypes.LPCWSTR),
+    ]
+
+
+class Message(Structure):
+    _fields_ = [
+        ("hwnd", wintypes.HWND),
+        ("message", wintypes.UINT),
+        ("wParam", wintypes.WPARAM),
+        ("lParam", wintypes.LPARAM),
+        ("time", wintypes.DWORD),
+        ("pt", wintypes.POINT),
+    ]
+
+
+class TrayIcon:
+    def __init__(self, root, on_locate, on_menu):
+        self.root = root
+        self.on_locate = on_locate
+        self.on_menu = on_menu
+        self.hwnd = None
+        self.hicon = None
+        self.class_name = f"CodexBubbleTray{threading.get_ident()}{id(self)}"
+        self._wnd_proc = WNDPROC(self._window_proc)
+        self.thread = None
+
+    def start(self):
+        if sys.platform != "win32":
+            return
+        self.thread = threading.Thread(target=self._run, name="CodexBubbleTray", daemon=True)
+        self.thread.start()
+
+    def stop(self):
+        if self.hwnd:
+            try:
+                windll.user32.PostMessageW(self.hwnd, WM_CLOSE, 0, 0)
+            except Exception:
+                pass
+
+    def _run(self):
+        try:
+            self._configure_win32_api()
+            hinstance = windll.kernel32.GetModuleHandleW(None)
+            wndclass = WindowClass()
+            wndclass.style = 0
+            wndclass.lpfnWndProc = self._wnd_proc
+            wndclass.cbClsExtra = 0
+            wndclass.cbWndExtra = 0
+            wndclass.hInstance = hinstance
+            wndclass.hIcon = 0
+            wndclass.hCursor = 0
+            wndclass.hbrBackground = 0
+            wndclass.lpszMenuName = None
+            wndclass.lpszClassName = self.class_name
+            windll.user32.RegisterClassW(byref(wndclass))
+
+            self.hwnd = windll.user32.CreateWindowExW(
+                0,
+                self.class_name,
+                self.class_name,
+                0,
+                0,
+                0,
+                0,
+                0,
+                None,
+                None,
+                hinstance,
+                None,
+            )
+            if not self.hwnd:
+                return
+            self._add_icon()
+            msg = Message()
+            while windll.user32.GetMessageW(byref(msg), None, 0, 0) > 0:
+                windll.user32.TranslateMessage(byref(msg))
+                windll.user32.DispatchMessageW(byref(msg))
+        except Exception:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
+
+    def _configure_win32_api(self):
+        windll.kernel32.GetModuleHandleW.restype = wintypes.HINSTANCE
+        windll.user32.CreateWindowExW.argtypes = [
+            wintypes.DWORD,
+            wintypes.LPCWSTR,
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            c_int,
+            c_int,
+            c_int,
+            c_int,
+            wintypes.HWND,
+            wintypes.HANDLE,
+            wintypes.HINSTANCE,
+            c_void_p,
+        ]
+        windll.user32.CreateWindowExW.restype = wintypes.HWND
+        windll.user32.LoadImageW.restype = wintypes.HANDLE
+        windll.user32.LoadIconW.restype = wintypes.HICON
+        windll.user32.DefWindowProcW.restype = wintypes.LPARAM
+        windll.shell32.Shell_NotifyIconW.argtypes = [wintypes.DWORD, c_void_p]
+
+    def _load_icon(self):
+        icon_path = PROJECT_ROOT / "docs" / "assets" / "codex-bubble.ico"
+        if icon_path.exists():
+            icon = windll.user32.LoadImageW(
+                None,
+                str(icon_path),
+                IMAGE_ICON,
+                0,
+                0,
+                LR_LOADFROMFILE | LR_DEFAULTSIZE,
+            )
+            if icon:
+                return icon
+        return windll.user32.LoadIconW(None, IDI_APPLICATION)
+
+    def _icon_data(self):
+        data = NotifyIconData()
+        data.cbSize = sizeof(NotifyIconData)
+        data.hWnd = self.hwnd
+        data.uID = 1
+        return data
+
+    def _add_icon(self):
+        self.hicon = self._load_icon()
+        data = self._icon_data()
+        data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
+        data.uCallbackMessage = WM_TRAY_MESSAGE
+        data.hIcon = self.hicon
+        data.szTip = "Codex 额度悬浮球 - 双击定位"
+        if not windll.shell32.Shell_NotifyIconW(NIM_ADD, byref(data)):
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LOG_PATH.write_text("Shell_NotifyIconW(NIM_ADD) failed.\n", encoding="utf-8")
+            return
+        self.show_balloon("Codex 额度悬浮球", "双击托盘图标可定位悬浮球。")
+
+    def show_balloon(self, title, message):
+        if not self.hwnd:
+            return
+        data = self._icon_data()
+        data.uFlags = NIF_INFO
+        data.szInfoTitle = title
+        data.szInfo = message
+        data.dwInfoFlags = NIIF_INFO
+        data.uTimeoutOrVersion = 3000
+        windll.shell32.Shell_NotifyIconW(NIM_MODIFY, byref(data))
+
+    def _delete_icon(self):
+        if self.hwnd:
+            data = self._icon_data()
+            windll.shell32.Shell_NotifyIconW(NIM_DELETE, byref(data))
+        if self.hicon:
+            windll.user32.DestroyIcon(self.hicon)
+            self.hicon = None
+
+    def _window_proc(self, hwnd, msg, wparam, lparam):
+        if msg == WM_TRAY_MESSAGE:
+            if int(lparam) == WM_LBUTTONDBLCLK:
+                self.root.after(1, self.on_locate)
+            elif int(lparam) == WM_RBUTTONUP:
+                self.root.after(1, self.on_menu)
+            return 0
+        if msg == WM_CLOSE:
+            windll.user32.DestroyWindow(hwnd)
+            return 0
+        if msg == WM_DESTROY:
+            self._delete_icon()
+            windll.user32.PostQuitMessage(0)
+            return 0
+        return windll.user32.DefWindowProcW(hwnd, msg, wparam, lparam)
+
+
 class FloatingInfoBall:
     def __init__(self):
         self.config_data = self.load_config()
@@ -93,6 +338,8 @@ class FloatingInfoBall:
         self.root.attributes("-topmost", True)
         self.root.attributes("-alpha", 1.0)
         self.root.configure(bg=TRANSPARENT)
+        self.root.after(200, self.hide_from_taskbar)
+        self.root.after(1200, self.hide_from_taskbar)
 
         try:
             self.root.wm_attributes("-transparentcolor", TRANSPARENT)
@@ -107,7 +354,9 @@ class FloatingInfoBall:
         self.drag_threshold = 10
         self.is_animating = False
         self.update_checking = False
+        self.location_hint = None
         self.menu = None
+        self.tray_icon = TrayIcon(self.root, self.locate_from_tray, self.show_tray_menu)
         self.font_main = ("Microsoft YaHei UI", 10, "bold")
         self.font_meta = ("Microsoft YaHei UI", 9)
         self.font_chip = ("Microsoft YaHei UI", 9, "bold")
@@ -132,9 +381,11 @@ class FloatingInfoBall:
         pos = self.safe_start_position(self.config_data.get("position", {}))
         self.root.geometry("+0+0")
         self.set_window_position(int(pos.get("x", 1200)), int(pos.get("y", 220)))
+        self.tray_icon.start()
         self.ensure_daemon_running()
         self.render()
         self.schedule_refresh()
+        self.schedule_visibility_check()
         self.root.after(3000, self.refresh_now)
 
     def apply_window_icon(self):
@@ -144,6 +395,49 @@ class FloatingInfoBall:
                 self.root.iconbitmap(str(icon_path))
         except Exception:
             pass
+
+    def hide_from_taskbar(self):
+        if sys.platform != "win32":
+            return
+        try:
+            hwnd = self.root.winfo_id()
+            try:
+                self.root.attributes("-toolwindow", True)
+            except tk.TclError:
+                pass
+            windll.user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+            windll.user32.GetAncestor.restype = wintypes.HWND
+            native_hwnd = windll.user32.GetAncestor(c_void_p(hwnd), GA_ROOT)
+            if native_hwnd:
+                hwnd = native_hwnd
+            get_long = getattr(windll.user32, "GetWindowLongPtrW", windll.user32.GetWindowLongW)
+            set_long = getattr(windll.user32, "SetWindowLongPtrW", windll.user32.SetWindowLongW)
+            get_long.argtypes = [wintypes.HWND, c_int]
+            get_long.restype = wintypes.LPARAM
+            set_long.argtypes = [wintypes.HWND, c_int, wintypes.LPARAM]
+            set_long.restype = wintypes.LPARAM
+            style = int(get_long(hwnd, GWL_EXSTYLE))
+            style = (style | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+            set_long(hwnd, GWL_EXSTYLE, style)
+            x = self.root.winfo_x()
+            y = self.root.winfo_y()
+            self.root.withdraw()
+            self.root.update_idletasks()
+            windll.user32.SetWindowPos(
+                hwnd,
+                None,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED,
+            )
+            self.root.deiconify()
+            self.set_window_position(x, y)
+            self.root.lift()
+        except Exception:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
 
     def load_config(self):
         if not CONFIG_PATH.exists() and DEFAULT_CONFIG_PATH.exists():
@@ -547,6 +841,8 @@ class FloatingInfoBall:
     def keep_on_screen(self):
         if self.drag_start:
             return
+        old_x = self.root.winfo_x()
+        old_y = self.root.winfo_y()
         win_w = self.root.winfo_width()
         win_h = self.root.winfo_height()
         x, y = self.clamp_to_area(
@@ -557,6 +853,14 @@ class FloatingInfoBall:
             self.work_area_for_window(),
         )
         self.set_window_position(x, y)
+        return (old_x, old_y) != (x, y)
+
+    def schedule_visibility_check(self):
+        if not self.drag_start and not self.is_animating:
+            moved = self.keep_on_screen()
+            if moved:
+                self.save_position()
+        self.root.after(10000, self.schedule_visibility_check)
 
     def keep_on_screen_for_point(self, point_x, point_y):
         win_w = self.root.winfo_width()
@@ -662,6 +966,112 @@ class FloatingInfoBall:
             f"当前已是最新版本 v{update_info.current_version}",
         )
 
+    def locate_from_tray(self):
+        self.close_menu()
+        self.drag_start = None
+        self.root.deiconify()
+        self.root.update_idletasks()
+        self.keep_on_screen()
+        self.save_position()
+        try:
+            self.root.attributes("-topmost", False)
+            self.root.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        self.root.lift()
+        self.show_location_hint()
+
+    def cursor_position(self):
+        point = wintypes.POINT()
+        try:
+            if windll.user32.GetCursorPos(byref(point)):
+                return int(point.x), int(point.y)
+        except Exception:
+            pass
+        return self.root.winfo_x(), self.root.winfo_y()
+
+    def show_tray_menu(self):
+        self.close_menu()
+        x, y = self.cursor_position()
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="定位悬浮球", command=lambda: self.run_menu_action(self.locate_from_tray))
+        menu.add_separator()
+        menu.add_command(label="退出", command=lambda: self.run_menu_action(self.quit))
+        self.menu = menu
+        try:
+            menu.tk_popup(x, y)
+        finally:
+            menu.grab_release()
+
+    def show_location_hint(self):
+        self.destroy_location_hint()
+        x = self.root.winfo_x()
+        y = self.root.winfo_y()
+        width = max(1, self.root.winfo_width())
+        height = max(1, self.root.winfo_height())
+        hint_width = 210
+        hint_height = 56
+        area = self.work_area_for_point(x + width // 2, y + height // 2)
+        hint_x = x + (width - hint_width) // 2
+        hint_y = y - hint_height - 8
+        if hint_y < area[1] + SCREEN_MARGIN:
+            hint_y = y + height + 8
+        hint_x, hint_y = self.clamp_to_area(hint_x, hint_y, hint_width, hint_height, area)
+
+        hint = tk.Toplevel(self.root)
+        hint.overrideredirect(True)
+        hint.attributes("-topmost", True)
+        hint.attributes("-alpha", 0.96)
+        hint.configure(bg=TRANSPARENT)
+        try:
+            hint.wm_attributes("-transparentcolor", TRANSPARENT)
+        except tk.TclError:
+            hint.configure(bg="#111111")
+
+        canvas = tk.Canvas(hint, width=hint_width, height=hint_height, bg=TRANSPARENT, highlightthickness=0, bd=0)
+        canvas.pack()
+        canvas.create_rectangle(8, 6, hint_width - 8, 40, fill="#111111", outline="#007AFF", width=2)
+        canvas.create_text(
+            hint_width / 2,
+            23,
+            text="悬浮球在这里",
+            fill="#FFFFFF",
+            font=("Microsoft YaHei UI", 10, "bold"),
+        )
+        if hint_y < y:
+            canvas.create_polygon(
+                hint_width / 2 - 9,
+                40,
+                hint_width / 2 + 9,
+                40,
+                hint_width / 2,
+                52,
+                fill="#007AFF",
+                outline="",
+            )
+        else:
+            canvas.create_polygon(
+                hint_width / 2 - 9,
+                8,
+                hint_width / 2 + 9,
+                8,
+                hint_width / 2,
+                0,
+                fill="#007AFF",
+                outline="",
+            )
+        hint.geometry(f"{hint_width}x{hint_height}+{hint_x}+{hint_y}")
+        self.location_hint = hint
+        hint.after(1800, self.destroy_location_hint)
+
+    def destroy_location_hint(self):
+        if self.location_hint is not None:
+            try:
+                self.location_hint.destroy()
+            except tk.TclError:
+                pass
+        self.location_hint = None
+
     def run_menu_action(self, action, *args):
         self.close_menu()
         self.drag_start = None
@@ -755,6 +1165,8 @@ class FloatingInfoBall:
         self.drag_start = None
 
     def quit(self):
+        self.destroy_location_hint()
+        self.tray_icon.stop()
         self.save_position()
         self.root.destroy()
 
