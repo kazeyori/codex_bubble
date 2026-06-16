@@ -2,6 +2,9 @@
   "collapsed": true,
   "refresh_label": "刷新",
   "active_window": "five_hour",
+  "visible_windows": [
+    "five_hour"
+  ],
   "data_source": "static",
   "usage_windows": {
     "five_hour": {

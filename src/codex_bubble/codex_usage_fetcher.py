@@ -117,7 +117,6 @@ def normalize_codex_rate_limit(payload):
 
     return {
         "data_source": "codex-local-sessions",
-        "active_window": "five_hour",
         "usage_windows": {
             "five_hour": five_hour,
             "weekly": weekly,

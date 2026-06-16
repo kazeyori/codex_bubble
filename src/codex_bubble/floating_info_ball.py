@@ -65,6 +65,7 @@ DEFAULT_CONFIG = {
     "collapsed": True,
     "refresh_label": "刷新",
     "active_window": "five_hour",
+    "visible_windows": ["five_hour"],
     "data_source": "static",
     "usage_windows": {
         "five_hour": {"label": "5小时", "remaining": "-", "reset": "-"},
@@ -378,6 +379,8 @@ class FloatingInfoBall:
         self.font_meta = ("Microsoft YaHei UI", 9)
         self.font_chip = ("Microsoft YaHei UI", 9, "bold")
         self.font_refresh = ("Microsoft YaHei UI", 8)
+        self.font_compact = ("Microsoft YaHei UI", 8, "bold")
+        self.font_compact_refresh = ("Microsoft YaHei UI", 7)
 
         self.canvas = tk.Canvas(
             self.root,
@@ -474,6 +477,8 @@ class FloatingInfoBall:
         try:
             loaded = json.loads(CONFIG_PATH.read_text(encoding="utf-8-sig"))
             merged = deep_merge(DEFAULT_CONFIG, loaded)
+            if "visible_windows" not in loaded and loaded.get("active_window") in ("five_hour", "weekly"):
+                merged["visible_windows"] = [loaded["active_window"]]
             if "usage_windows" not in loaded and loaded.get("rows"):
                 rows = loaded["rows"]
                 if len(rows) > 0:
@@ -498,6 +503,7 @@ class FloatingInfoBall:
         if not DATA_PATH.exists():
             self.config_data["data_source"] = "static"
             self.config_data["usage_windows"] = disconnected_usage_windows()
+            self.last_refresh = datetime.now()
             return
         try:
             data = json.loads(DATA_PATH.read_text(encoding="utf-8-sig"))
@@ -506,14 +512,30 @@ class FloatingInfoBall:
                     self.config_data.get("usage_windows", {}),
                     data["usage_windows"],
                 )
-            if data.get("active_window") in ("five_hour", "weekly"):
-                self.config_data["active_window"] = data["active_window"]
             self.config_data["data_source"] = data.get("data_source", "file")
+            if not self.apply_snapshot_time(data.get("snapshot_time")):
+                self.last_refresh = datetime.fromtimestamp(DATA_PATH.stat().st_mtime)
         except Exception:
             self.config_data["data_source"] = "static"
             self.config_data["usage_windows"] = disconnected_usage_windows()
+            self.last_refresh = datetime.now()
             LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
+
+    def apply_snapshot_time(self, value):
+        if not value:
+            return False
+        try:
+            text = str(value)
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            snapshot = datetime.fromisoformat(text)
+            if snapshot.tzinfo is not None:
+                snapshot = snapshot.astimezone().replace(tzinfo=None)
+            self.last_refresh = snapshot
+            return True
+        except Exception:
+            return False
 
     def save_config(self):
         saved_config = deep_merge(DEFAULT_CONFIG, self.config_data)
@@ -539,6 +561,29 @@ class FloatingInfoBall:
         except Exception:
             LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
+
+    def run_fetcher_once(self):
+        fetcher_path = Path(__file__).resolve().parent / "codex_usage_fetcher.py"
+        try:
+            completed = subprocess.run(
+                [sys.executable, str(fetcher_path)],
+                cwd=str(fetcher_path.parent),
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=15,
+                creationflags=CREATE_NO_WINDOW,
+            )
+            if completed.returncode != 0:
+                LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+                LOG_PATH.write_text((completed.stderr or "fetch failed").strip(), encoding="utf-8")
+                return False
+            return True
+        except Exception:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
+            return False
 
     def save_position(self):
         self.config_data["position"] = {
@@ -669,11 +714,43 @@ class FloatingInfoBall:
         ]
         return self.canvas.create_polygon(points, smooth=True, **kwargs)
 
-    def refresh_text(self):
-        label = str(self.config_data.get("refresh_label", "刷新"))
-        if self.config_data.get("data_source", "static") == "static":
-            return f"未连接 {self.last_refresh:%H:%M}"
-        return f"{label} {self.last_refresh:%H:%M}"
+    def compact_refresh_time_text(self):
+        return f"{self.last_refresh:%H:%M}"
+
+    def draw_refresh_glyph(self, x, y, color):
+        self.canvas.create_arc(
+            x,
+            y - 5,
+            x + 10,
+            y + 5,
+            start=35,
+            extent=285,
+            style="arc",
+            outline=color,
+            width=1,
+        )
+        self.canvas.create_polygon(
+            x + 9,
+            y - 5,
+            x + 12,
+            y - 6,
+            x + 10,
+            y - 2,
+            fill=color,
+            outline=color,
+        )
+
+    def draw_reset_glyph(self, x, y, color):
+        self.canvas.create_oval(
+            x,
+            y - 5,
+            x + 10,
+            y + 5,
+            outline=color,
+            width=1,
+        )
+        self.canvas.create_line(x + 5, y, x + 5, y - 3, fill=color, width=1)
+        self.canvas.create_line(x + 5, y, x + 8, y, fill=color, width=1)
 
     def active_usage(self):
         windows = self.config_data.get("usage_windows", {})
@@ -683,6 +760,48 @@ class FloatingInfoBall:
             "remaining": "-",
             "reset": "-",
         }
+
+    def visible_window_keys(self):
+        windows = self.config_data.get("usage_windows", {})
+        configured = self.config_data.get("visible_windows")
+        if not isinstance(configured, list):
+            configured = [self.config_data.get("active_window", "five_hour")]
+        keys = []
+        for key in configured:
+            if key in ("five_hour", "weekly") and key in windows and key not in keys:
+                keys.append(key)
+        if not keys:
+            active = self.config_data.get("active_window", "five_hour")
+            keys = [active if active in windows else "five_hour"]
+        return keys
+
+    def visible_usage_rows(self):
+        windows = self.config_data.get("usage_windows", {})
+        return [(key, windows.get(key, {})) for key in self.visible_window_keys()]
+
+    def compact_window_label(self, key, row):
+        if key == "five_hour":
+            return "5h"
+        if key == "weekly":
+            return "1w"
+        label = str(row.get("label", ""))
+        return label.replace("小时", "h").replace("周", "w")
+
+    def compact_usage_lines(self, rows):
+        lines = []
+        for key, row in rows[:2]:
+            lines.append(
+                f"{self.compact_window_label(key, row)} "
+                f"{row.get('remaining', '-')} "
+                f"{self.compact_reset_text(row.get('reset', '-'))}"
+            )
+        return lines
+
+    def compact_reset_text(self, value):
+        text = str(value or "-")
+        if text == "-":
+            return text
+        return text.replace("月", "/").replace("日", "")
 
     def usage_rows(self):
         windows = self.config_data.get("usage_windows", {})
@@ -747,7 +866,6 @@ class FloatingInfoBall:
 
     def schedule_refresh(self):
         self.load_usage_data()
-        self.last_refresh = datetime.now()
         if not self.is_animating:
             self.render()
         self.root.after(60000, self.schedule_refresh)
@@ -765,53 +883,86 @@ class FloatingInfoBall:
 
     def render_chip(self):
         colors = self.config_data["colors"]
-        row = self.active_usage()
+        rows = self.visible_usage_rows()
+        single_row = len(rows) <= 1
+        row = rows[0][1] if rows else self.active_usage()
         has_update = self.has_pending_update()
-        width, height = (206 if has_update else 172), 54
-        remaining_x = width - 72 if has_update else width - 20
+        if single_row:
+            width, height = (212 if has_update else 178), 54
+            text_x = 42
+            icon_x = 12
+            remaining_x = width - 74 if has_update else width - 18
+        else:
+            width, height = (212 if has_update else 178), 54
+            text_x = 42
+            icon_x = 12
         self.canvas.configure(width=width, height=height)
 
         self.rounded_rect(6, 8, width - 3, height - 3, 20, fill=colors["shadow"], outline="")
         self.rounded_rect(3, 3, width - 7, height - 7, 20, fill=colors["glass"], outline=colors["line"])
-        self.draw_codex_icon(14, 16, 22)
-        self.canvas.create_text(
-            44,
-            18,
-            text=str(row.get("label", "")),
-            fill=colors["text"],
-            font=self.font_chip,
-            anchor="w",
-        )
-        self.canvas.create_text(
-            remaining_x,
-            18,
-            text=str(row.get("remaining", "")),
-            fill=colors["text"],
-            font=self.font_chip,
-            anchor="e",
-        )
-        self.canvas.create_text(
-            44,
-            37,
-            text=self.refresh_text(),
-            fill=colors["muted"],
-            font=self.font_refresh,
-            anchor="w",
-        )
-        self.canvas.create_text(
-            width - 20,
-            37,
-            text=str(row.get("reset", "")),
-            fill=colors["muted"],
-            font=self.font_refresh,
-            anchor="e",
-        )
+        self.draw_codex_icon(icon_x, 16, 22)
+        if single_row:
+            self.canvas.create_text(
+                text_x,
+                18,
+                text=str(row.get("label", "")),
+                fill=colors["text"],
+                font=self.font_chip,
+                anchor="w",
+            )
+            self.canvas.create_text(
+                remaining_x,
+                18,
+                text=str(row.get("remaining", "")),
+                fill=colors["text"],
+                font=self.font_chip,
+                anchor="e",
+            )
+            self.draw_reset_glyph(text_x, 37, colors["muted"])
+            self.canvas.create_text(
+                text_x + 14,
+                37,
+                text=str(row.get("reset", "")),
+                fill=colors["muted"],
+                font=self.font_refresh,
+                anchor="w",
+            )
+            refresh_x = width - 51
+            self.draw_refresh_glyph(refresh_x, 37, colors["muted"])
+            self.canvas.create_text(
+                refresh_x + 15,
+                37,
+                text=self.compact_refresh_time_text(),
+                fill=colors["muted"],
+                font=self.font_refresh,
+                anchor="w",
+            )
+        else:
+            for index, line in enumerate(self.compact_usage_lines(rows)):
+                self.canvas.create_text(
+                    text_x,
+                    18 + index * 19,
+                    text=line,
+                    fill=colors["text"],
+                    font=self.font_compact,
+                    anchor="w",
+            )
+            refresh_x = width - 51
+            self.draw_refresh_glyph(refresh_x, 41, colors["muted"])
+            self.canvas.create_text(
+                refresh_x + 15,
+                41,
+                text=self.compact_refresh_time_text(),
+                fill=colors["muted"],
+                font=self.font_compact_refresh,
+                anchor="w",
+            )
         if has_update:
             self.draw_update_badge(width - 58, 8)
 
     def render_panel(self):
         colors = self.config_data["colors"]
-        active = self.config_data.get("active_window", "five_hour")
+        visible_keys = set(self.visible_window_keys())
         has_update = self.has_pending_update()
         width, height = 294, 178
         self.canvas.configure(width=width, height=height)
@@ -849,7 +1000,7 @@ class FloatingInfoBall:
                 182,
                 y,
                 text=str(row.get("remaining", "")),
-                fill=colors["text"] if key == active else colors["muted"],
+                fill=colors["text"] if key in visible_keys else colors["muted"],
                 font=self.font_meta,
                 anchor="e",
             )
@@ -871,15 +1022,16 @@ class FloatingInfoBall:
             font=self.font_refresh,
             anchor="w",
         )
-        self.draw_switch_button(62, 121, 92, 30, "5小时", active == "five_hour", "five_hour")
-        self.draw_switch_button(162, 121, 78, 30, "1周", active == "weekly", "weekly")
+        self.draw_switch_button(62, 121, 92, 30, "5小时", "five_hour" in visible_keys, "five_hour")
+        self.draw_switch_button(162, 121, 78, 30, "1周", "weekly" in visible_keys, "weekly")
+        self.draw_refresh_glyph(width - 82, 162, colors["muted"])
         self.canvas.create_text(
-            width - 30,
+            width - 67,
             162,
-            text=self.refresh_text(),
+            text=self.compact_refresh_time_text(),
             fill=colors["muted"],
             font=self.font_refresh,
-            anchor="e",
+            anchor="w",
         )
 
     def keep_on_screen(self):
@@ -927,7 +1079,19 @@ class FloatingInfoBall:
     def set_active_window(self, target):
         if self.is_animating:
             return
-        self.config_data["active_window"] = target
+        self.toggle_visible_window(target)
+
+    def toggle_visible_window(self, target):
+        if target not in ("five_hour", "weekly"):
+            return
+        visible = self.visible_window_keys()
+        if target in visible:
+            if len(visible) > 1:
+                visible.remove(target)
+        else:
+            visible.append(target)
+        self.config_data["visible_windows"] = visible
+        self.config_data["active_window"] = visible[0]
         self.render()
         self.save_position()
 
@@ -966,8 +1130,8 @@ class FloatingInfoBall:
         self.save_position()
 
     def refresh_now(self):
+        self.run_fetcher_once()
         self.load_usage_data()
-        self.last_refresh = datetime.now()
         self.render()
         self.save_position()
 
@@ -1167,7 +1331,7 @@ class FloatingInfoBall:
 
     def show_menu(self, event):
         self.close_menu()
-        active = self.config_data.get("active_window", "five_hour")
+        visible_keys = set(self.visible_window_keys())
         menu = tk.Menu(self.root, tearoff=0)
         menu.add_command(
             label="收起" if self.expanded else "展开",
@@ -1175,11 +1339,11 @@ class FloatingInfoBall:
         )
         menu.add_separator()
         menu.add_command(
-            label=("✓ " if active == "five_hour" else "  ") + "显示 5小时",
+            label=("✓ " if "five_hour" in visible_keys else "  ") + "显示 5小时",
             command=lambda: self.run_menu_action(self.set_active_window, "five_hour"),
         )
         menu.add_command(
-            label=("✓ " if active == "weekly" else "  ") + "显示 1周",
+            label=("✓ " if "weekly" in visible_keys else "  ") + "显示 1周",
             command=lambda: self.run_menu_action(self.set_active_window, "weekly"),
         )
         menu.add_separator()
@@ -1240,9 +1404,8 @@ class FloatingInfoBall:
             target = self.target_at(event.x, event.y)
             if target == UPDATE_BADGE_TARGET:
                 self.open_update_download()
-            elif target:
-                self.config_data["active_window"] = target
-                self.render()
+            elif target in ("five_hour", "weekly"):
+                self.toggle_visible_window(target)
             else:
                 self.toggle_expanded()
                 self.drag_start = None
