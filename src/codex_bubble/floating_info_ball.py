@@ -30,6 +30,7 @@ LOG_PATH = FLOATING_LOG_PATH
 TRANSPARENT = "#010203"
 SCREEN_MARGIN = 8
 DEFAULT_POSITION = {"x": 1380, "y": 220}
+PROJECT_HOME_URL = "https://github.com/chinnkenni/codex_bubble"
 CREATE_NO_WINDOW = 0x08000000
 WM_DESTROY = 0x0002
 WM_CLOSE = 0x0010
@@ -1440,6 +1441,7 @@ class FloatingInfoBall:
             )
             menu.add_separator()
         menu.add_command(label="定位悬浮球", command=lambda: self.run_menu_action(self.locate_from_tray))
+        menu.add_command(label="前往官网", command=lambda: self.run_menu_action(self.open_project_homepage))
         menu.add_separator()
         menu.add_command(label="退出", command=lambda: self.run_menu_action(self.quit))
         self.menu = menu
@@ -1523,6 +1525,9 @@ class FloatingInfoBall:
         self.was_dragged = False
         self.root.after(1, lambda: action(*args))
 
+    def open_project_homepage(self):
+        webbrowser.open(PROJECT_HOME_URL)
+
     def close_menu(self):
         if self.menu is not None:
             try:
@@ -1559,8 +1564,9 @@ class FloatingInfoBall:
         menu.add_command(label=f"当前版本 v{read_current_version()}", state="disabled")
         menu.add_command(
             label="数据源: " + ("静态" if self.config_data.get("data_source") == "static" else "文件"),
-            command=lambda: self.run_menu_action(self.refresh_now),
+            state="disabled",
         )
+        menu.add_command(label="前往官网", command=lambda: self.run_menu_action(self.open_project_homepage))
         menu.add_separator()
         menu.add_command(label="退出", command=lambda: self.run_menu_action(self.quit))
 

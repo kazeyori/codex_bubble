@@ -22,6 +22,32 @@ if (!(Test-Path -LiteralPath $payload)) {
   throw "Installer payload is missing: codex-bubble-payload.zip"
 }
 
+function Restore-UserConfig {
+  param(
+    [string]$SourceRoot,
+    [string]$TargetRoot
+  )
+
+  if ([string]::IsNullOrWhiteSpace($SourceRoot) -or !(Test-Path -LiteralPath $SourceRoot)) {
+    return
+  }
+
+  $sourceConfig = Join-Path $SourceRoot "config"
+  if (!(Test-Path -LiteralPath $sourceConfig)) {
+    return
+  }
+
+  $targetConfig = Join-Path $TargetRoot "config"
+  New-Item -ItemType Directory -Force -Path $targetConfig | Out-Null
+
+  foreach ($name in @("floating_info_ball_config.json")) {
+    $sourceFile = Join-Path $sourceConfig $name
+    if (Test-Path -LiteralPath $sourceFile) {
+      Copy-Item -LiteralPath $sourceFile -Destination (Join-Path $targetConfig $name) -Force
+    }
+  }
+}
+
 if (!$NoLaunch) {
   $oldProcesses = @()
   try {
@@ -61,6 +87,7 @@ if (Test-Path -LiteralPath $installRoot) {
 try {
   New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
   Expand-Archive -LiteralPath $payload -DestinationPath $installRoot -Force
+  Restore-UserConfig -SourceRoot $backupRoot -TargetRoot $installRoot
 
   $starter = Join-Path $installRoot $starterName
   $uninstaller = Join-Path $installRoot $uninstallerName
