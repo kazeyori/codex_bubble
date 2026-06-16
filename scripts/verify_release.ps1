@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$InstallerPath = "",
   [string]$PayloadZip = ""
 )
@@ -14,8 +14,8 @@ $version = (Get-Content -LiteralPath (Join-Path $root "VERSION") -Raw).Trim()
 if ([string]::IsNullOrWhiteSpace($InstallerPath)) {
   $InstallerPath = Join-Path $root "releases\codex-bubble-setup-v$version.exe"
 }
-$starterName = [string]::Concat([char[]](21551,21160,24748,28014,29699,46,98,97,116))
-$uninstallerName = [string]::Concat([char[]](21368,36733,24748,28014,29699,46,98,97,116))
+$starterName = "启动悬浮球.bat"
+$uninstallerName = "卸载悬浮球.bat"
 
 Write-Host "Checking Python syntax..."
 $pythonFiles = @(
@@ -60,7 +60,10 @@ $requiredFiles = @(
   "docs\assets\codex-bubble.ico",
   "docs\assets\preview-chip-five-hour.png",
   "docs\assets\preview-chip-weekly.png",
-  "docs\assets\preview-panel.png"
+  "docs\assets\preview-panel.png",
+  "docs\assets\preview-update-badge.png",
+  "docs\assets\preview-update-panel.png",
+  "docs\assets\preview-update-tray-menu.png"
 )
 foreach ($file in $requiredFiles) {
   $path = Join-Path $root $file
@@ -117,6 +120,9 @@ try {
     "docs\assets\preview-chip-five-hour.png",
     "docs\assets\preview-chip-weekly.png",
     "docs\assets\preview-panel.png",
+    "docs\assets\preview-update-badge.png",
+    "docs\assets\preview-update-panel.png",
+    "docs\assets\preview-update-tray-menu.png",
     "docs\assets\codex-bubble.ico",
     "scripts\uninstall_app.ps1"
   )
@@ -132,6 +138,7 @@ try {
       $entry -match '(^|\\)data(\\|$)' -or
       $entry -match '(^|\\)logs(\\|$)' -or
       $entry -match '__pycache__' -or
+      $entry -match '(^|\\)scripts\\dev_' -or
       $entry -match '\.log$' -or
       $entry -match 'codex_usage_data\.json$'
     ) {
@@ -165,7 +172,7 @@ try {
       throw "Installer executable smoke test missing installed file: $file"
     }
   }
-  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $testInstall "scripts\uninstall_app.ps1") -InstallRoot $testInstall -NoPrompt -Quiet
+  & powershell -NoProfile -File (Join-Path $testInstall "scripts\uninstall_app.ps1") -InstallRoot $testInstall -NoPrompt -Quiet
   if ($LASTEXITCODE -ne 0) {
     throw "Uninstaller smoke test failed."
   }

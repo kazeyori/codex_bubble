@@ -9,6 +9,8 @@ from runtime_paths import PROJECT_ROOT
 
 REPO_API_URL = "https://api.github.com/repos/chinnkenni/codex_bubble/releases/latest"
 REPO_RELEASES_URL = "https://github.com/chinnkenni/codex_bubble/releases/latest"
+REPO_RELEASE_TAG_URL = "https://github.com/chinnkenni/codex_bubble/releases/tag/{tag}"
+REPO_DOWNLOAD_URL = "https://github.com/chinnkenni/codex_bubble/releases/download/{tag}/codex-bubble-setup-{tag}.exe"
 REQUEST_TIMEOUT_SECONDS = 8
 
 
@@ -51,16 +53,62 @@ def read_current_version():
         return "0.0.0"
 
 
-def fetch_latest_release():
+def request_url(url, accept="text/html"):
     request = urllib.request.Request(
-        REPO_API_URL,
+        url,
         headers={
-            "Accept": "application/vnd.github+json",
+            "Accept": accept,
             "User-Agent": "CodexBubble",
         },
     )
     with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-        return json.loads(response.read().decode("utf-8"))
+        return response.geturl(), response.read().decode("utf-8", errors="replace")
+
+
+def release_from_tag(tag):
+    normalized = normalize_version(tag)
+    if not normalized:
+        return {}
+    canonical_tag = f"v{normalized}"
+    asset_url = REPO_DOWNLOAD_URL.format(tag=canonical_tag)
+    return {
+        "tag_name": canonical_tag,
+        "name": canonical_tag,
+        "html_url": REPO_RELEASE_TAG_URL.format(tag=canonical_tag),
+        "assets": [
+            {
+                "name": f"codex-bubble-setup-{canonical_tag}.exe",
+                "browser_download_url": asset_url,
+            }
+        ],
+    }
+
+
+def fetch_latest_release_from_redirect():
+    final_url, body = request_url(REPO_RELEASES_URL)
+    match = re.search(r"/releases/tag/([^/?#]+)", final_url)
+    if not match:
+        match = re.search(r"/chinnkenni/codex_bubble/releases/tag/([^\"?#]+)", body)
+    if not match:
+        raise ValueError("无法从 GitHub Release 页面解析最新版本号。")
+    return release_from_tag(match.group(1))
+
+
+def fetch_latest_release_from_api():
+    _final_url, body = request_url(REPO_API_URL, accept="application/vnd.github+json")
+    return json.loads(body)
+
+
+def fetch_latest_release():
+    errors = []
+    for fetcher in (fetch_latest_release_from_redirect, fetch_latest_release_from_api):
+        try:
+            return fetcher()
+        except Exception as error:
+            errors.append(error)
+    if errors and all(isinstance(error, urllib.error.URLError) for error in errors):
+        raise errors[0]
+    raise RuntimeError("; ".join(str(error) for error in errors))
 
 
 def extract_asset_url(release_data):

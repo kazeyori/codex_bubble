@@ -27,6 +27,7 @@
     "muted": "#8E8E93",
     "line": "#D9D9DE",
     "shadow": "#C7C7CC",
+    "warning": "#FF9500",
     "icon": "#111111",
     "icon_text": "#FFFFFF"
   }

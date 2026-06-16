@@ -41,13 +41,13 @@ scripts\start_codex_usage_daemon_local.bat
 安装：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install_local_usage_startup.ps1
+powershell -NoProfile -File scripts\install_local_usage_startup.ps1
 ```
 
 取消：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\uninstall_local_usage_startup.ps1
+powershell -NoProfile -File scripts\uninstall_local_usage_startup.ps1
 ```
 
 ## 不再保留的旧方案

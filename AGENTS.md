@@ -39,7 +39,7 @@
 1. 稳定本地额度解析：优先兼容 Codex 会话快照字段变化，解析失败时给出清晰日志。
 2. 打磨 Windows 桌面体验：悬浮球拖动、展开、右键菜单、屏幕边界和高 DPI 行为要稳定。
 3. 保持用户入口简单：普通用户只需要双击 `启动悬浮球.bat`。
-4. 在线更新以“检查 GitHub Release 并打开新版安装器”为主；安装器负责退出旧版进程并覆盖升级，不在运行中的 UI 里直接改写安装目录。
+4. 在线更新以“检查 GitHub Release 并打开新版安装器”为主；优先通过 GitHub Release latest 跳转解析版本，API 只作为备用，避免匿名 API 限流导致误报网络失败。安装器负责退出旧版进程并覆盖升级，不在运行中的 UI 里直接改写安装目录。
 5. 面向用户的 Release 必须是 Windows 安装器 `.exe`，不要再把 zip 源码包作为主要下载物。
 6. 文档中文优先：用户使用说明用中文；维护脚本和源码命名保持英文。
 
@@ -53,6 +53,7 @@
 - 如果保存的位置对应的显示器已移除，把窗口移动到最近的可用显示器工作区内。
 - 悬浮球应提供系统托盘找回入口。双击托盘图标要定位悬浮球并给出短暂位置提示；主窗口不应在任务栏显示 Python 默认图标。
 - 分辨率变化、显示器拔插或重新登录后，应通过可见性看门狗把窗口夹回可用工作区。
+- 发现新版本时，悬浮球窗口要显示可点击的“升级”标记，点击后打开新版安装器下载地址；托盘图标要更新提示文案，并通过托盘气泡或托盘菜单提示有新版本。
 
 ## 不做的事
 
@@ -77,13 +78,15 @@ python -m py_compile src\codex_bubble\runtime_paths.py src\codex_bubble\single_i
 - 准备发布前必须运行：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
+powershell -NoProfile -File scripts\build_release.ps1
 ```
 
 - 任何功能追加或 BUG 修复，必须本地核验通过后才能打包、打 tag 或推送 GitHub Release。
 - 如果自动化无法验证某个行为，必须在本机运行软件，让用户确认后再继续。
 - 如果界面、交互或外观发生变化，必须更新 `docs/assets/` 中的截图，并同步更新 `README.md` 的预览图或说明。
 - 开发临时文件、缓存、日志、运行时数据必须加入 `.gitignore`，也必须从发布包中排除。
+- 构建、安装和卸载脚本不得用 PowerShell 的执行策略绕过参数、编码命令、字符数组拼接伪装字符串或隐藏临时脚本自删除。需要中文文件名时直接使用 UTF-8 明文；需要执行 PowerShell 时使用 `powershell -NoProfile -File ...`。
+- `scripts/dev_*` 只允许作为本地开发预览入口，构建脚本必须从安装器 payload 中排除；发布前应删除或禁用对应测试参数。
 
 - 修改启动流程后至少检查这些脚本路径：
   - `启动悬浮球.bat`
@@ -124,6 +127,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
 
 - 使用 `scripts\build_release.ps1` 生成安装器。
 - 使用 `scripts\verify_release.ps1` 核验安装器和内部 payload。
+- 发布脚本应保持可审计、少混淆、少隐藏行为；如果安全软件拦截构建命令，优先调整脚本透明度和权限需求，不做绕过安全检测的处理。
 - PR 必须等待 `.github/workflows/pr-review.yml` 的 `PR Review Gate` 通过；该门禁会跑空白检查、安装器构建、payload 检查、临时安装和卸载烟测，并上传短期安装器 artifact 供人工检查。
 - 核验失败时禁止推送 `v*` tag。
 - 核验失败时禁止触发 GitHub Release。

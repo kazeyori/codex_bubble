@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $PSCommandPath
 if ([string]::IsNullOrWhiteSpace($scriptDir)) {
@@ -12,8 +12,8 @@ $version = (Get-Content -LiteralPath (Join-Path $root "VERSION") -Raw).Trim()
 $releaseDir = Join-Path $root "releases"
 $payloadZip = Join-Path $installerStage "codex-bubble-payload.zip"
 $installerExe = Join-Path $releaseDir "codex-bubble-setup-v$version.exe"
-$starterName = [string]::Concat([char[]](21551,21160,24748,28014,29699,46,98,97,116))
-$uninstallerName = [string]::Concat([char[]](21368,36733,24748,28014,29699,46,98,97,116))
+$starterName = "启动悬浮球.bat"
+$uninstallerName = "卸载悬浮球.bat"
 $iconPath = Join-Path $root "docs\assets\codex-bubble.ico"
 
 if (Test-Path -LiteralPath $work) {
@@ -46,6 +46,9 @@ foreach ($name in @("data", "logs", "__pycache__", ".pytest_cache")) {
   foreach ($path in @(Get-ChildItem -LiteralPath $stage -Recurse -Force -Directory -Filter $name)) {
     Remove-Item -LiteralPath $path.FullName -Recurse -Force
   }
+}
+foreach ($path in @(Get-ChildItem -LiteralPath (Join-Path $stage "scripts") -Force -File -Filter "dev_*")) {
+  Remove-Item -LiteralPath $path.FullName -Force
 }
 foreach ($path in @(Get-ChildItem -LiteralPath $stage -Recurse -Force -File)) {
   if (

@@ -29,7 +29,7 @@ namespace CodexBubbleInstaller
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = powershell,
-                    Arguments = "-NoProfile -ExecutionPolicy Bypass -File \"" + Path.Combine(tempDir, "install.ps1") + "\"" +
+                    Arguments = "-NoProfile -File \"" + Path.Combine(tempDir, "install.ps1") + "\"" +
                         (noLaunch ? " -NoLaunch" : "") +
                         (quiet ? " -Quiet" : ""),
                     WorkingDirectory = tempDir,

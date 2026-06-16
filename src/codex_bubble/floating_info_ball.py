@@ -56,6 +56,10 @@ SWP_NOSIZE = 0x0001
 SWP_NOZORDER = 0x0004
 SWP_FRAMECHANGED = 0x0020
 GA_ROOT = 2
+DEFAULT_TRAY_TIP = "Codex 额度悬浮球 - 双击定位"
+UPDATE_BADGE_TARGET = "__open_update__"
+UPDATE_STARTUP_DELAY_MS = 15000
+UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000
 
 DEFAULT_CONFIG = {
     "collapsed": True,
@@ -75,6 +79,7 @@ DEFAULT_CONFIG = {
         "muted": "#8E8E93",
         "line": "#D9D9DE",
         "shadow": "#C7C7CC",
+        "warning": "#FF9500",
         "icon": "#111111",
         "icon_text": "#FFFFFF",
     },
@@ -179,6 +184,7 @@ class TrayIcon:
         self.class_name = f"CodexBubbleTray{threading.get_ident()}{id(self)}"
         self._wnd_proc = WNDPROC(self._window_proc)
         self.thread = None
+        self.tip = DEFAULT_TRAY_TIP
 
     def start(self):
         if sys.platform != "win32":
@@ -285,20 +291,29 @@ class TrayIcon:
         data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
         data.uCallbackMessage = WM_TRAY_MESSAGE
         data.hIcon = self.hicon
-        data.szTip = "Codex 额度悬浮球 - 双击定位"
+        data.szTip = self.tip
         if not windll.shell32.Shell_NotifyIconW(NIM_ADD, byref(data)):
             LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             LOG_PATH.write_text("Shell_NotifyIconW(NIM_ADD) failed.\n", encoding="utf-8")
             return
         self.show_balloon("Codex 额度悬浮球", "双击托盘图标可定位悬浮球。")
 
+    def set_tip(self, tip):
+        self.tip = str(tip or DEFAULT_TRAY_TIP)[:127]
+        if not self.hwnd:
+            return
+        data = self._icon_data()
+        data.uFlags = NIF_TIP
+        data.szTip = self.tip
+        windll.shell32.Shell_NotifyIconW(NIM_MODIFY, byref(data))
+
     def show_balloon(self, title, message):
         if not self.hwnd:
             return
         data = self._icon_data()
         data.uFlags = NIF_INFO
-        data.szInfoTitle = title
-        data.szInfo = message
+        data.szInfoTitle = str(title)[:63]
+        data.szInfo = str(message)[:255]
         data.dwInfoFlags = NIIF_INFO
         data.uTimeoutOrVersion = 3000
         windll.shell32.Shell_NotifyIconW(NIM_MODIFY, byref(data))
@@ -354,6 +369,8 @@ class FloatingInfoBall:
         self.drag_threshold = 10
         self.is_animating = False
         self.update_checking = False
+        self.update_info = None
+        self.update_notice_shown = False
         self.location_hint = None
         self.menu = None
         self.tray_icon = TrayIcon(self.root, self.locate_from_tray, self.show_tray_menu)
@@ -387,6 +404,7 @@ class FloatingInfoBall:
         self.schedule_refresh()
         self.schedule_visibility_check()
         self.root.after(3000, self.refresh_now)
+        self.root.after(UPDATE_STARTUP_DELAY_MS, self.schedule_update_check)
 
     def apply_window_icon(self):
         icon_path = PROJECT_ROOT / "docs" / "assets" / "codex-bubble.ico"
@@ -708,6 +726,25 @@ class FloatingInfoBall:
         )
         self.click_targets.append((x, y, x + width, y + height, target))
 
+    def has_pending_update(self):
+        return bool(self.update_info and self.update_info.has_update)
+
+    def update_badge_label(self):
+        return "升级"
+
+    def draw_update_badge(self, x, y, width=44, height=22):
+        colors = self.config_data["colors"]
+        fill = colors.get("warning", "#FF9500")
+        self.rounded_rect(x, y, x + width, y + height, 11, fill=fill, outline="")
+        self.canvas.create_text(
+            x + width / 2,
+            y + height / 2,
+            text=self.update_badge_label(),
+            fill="#FFFFFF",
+            font=("Microsoft YaHei UI", 8, "bold"),
+        )
+        self.click_targets.append((x, y, x + width, y + height, UPDATE_BADGE_TARGET))
+
     def schedule_refresh(self):
         self.load_usage_data()
         self.last_refresh = datetime.now()
@@ -729,7 +766,9 @@ class FloatingInfoBall:
     def render_chip(self):
         colors = self.config_data["colors"]
         row = self.active_usage()
-        width, height = 172, 54
+        has_update = self.has_pending_update()
+        width, height = (206 if has_update else 172), 54
+        remaining_x = width - 72 if has_update else width - 20
         self.canvas.configure(width=width, height=height)
 
         self.rounded_rect(6, 8, width - 3, height - 3, 20, fill=colors["shadow"], outline="")
@@ -744,7 +783,7 @@ class FloatingInfoBall:
             anchor="w",
         )
         self.canvas.create_text(
-            width - 20,
+            remaining_x,
             18,
             text=str(row.get("remaining", "")),
             fill=colors["text"],
@@ -767,10 +806,13 @@ class FloatingInfoBall:
             font=self.font_refresh,
             anchor="e",
         )
+        if has_update:
+            self.draw_update_badge(width - 58, 8)
 
     def render_panel(self):
         colors = self.config_data["colors"]
         active = self.config_data.get("active_window", "five_hour")
+        has_update = self.has_pending_update()
         width, height = 294, 178
         self.canvas.configure(width=width, height=height)
 
@@ -787,6 +829,8 @@ class FloatingInfoBall:
             font=("Microsoft YaHei UI", 9, "bold"),
             anchor="w",
         )
+        if has_update:
+            self.draw_update_badge(width - 72, 22)
         self.canvas.create_line(24, 54, width - 30, 54, fill=colors["line"])
 
         y_positions = [72, 100]
@@ -927,44 +971,73 @@ class FloatingInfoBall:
         self.render()
         self.save_position()
 
-    def check_update_now(self):
+    def schedule_update_check(self):
+        self.check_update_now(interactive=False)
+        self.root.after(UPDATE_CHECK_INTERVAL_MS, self.schedule_update_check)
+
+    def check_update_now(self, interactive=True):
         if self.update_checking:
-            messagebox.showinfo("检查更新", "正在检查更新，请稍等。")
+            if interactive:
+                messagebox.showinfo("检查更新", "正在检查更新，请稍等。")
             return
         self.update_checking = True
-        thread = threading.Thread(target=self.check_update_worker, daemon=True)
+        thread = threading.Thread(target=self.check_update_worker, args=(interactive,), daemon=True)
         thread.start()
 
-    def check_update_worker(self):
+    def check_update_worker(self, interactive):
         try:
             update_info = check_for_update()
-            self.root.after(1, lambda: self.show_update_result(update_info))
+            self.root.after(1, lambda: self.show_update_result(update_info, interactive))
         except Exception as error:
             message = friendly_error(error)
             LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
-            self.root.after(1, lambda: messagebox.showerror("检查更新", message))
+            self.root.after(1, lambda: self.show_update_error(message, interactive))
         finally:
             self.root.after(1, self.finish_update_check)
 
     def finish_update_check(self):
         self.update_checking = False
 
-    def show_update_result(self, update_info):
+    def show_update_error(self, message, interactive):
+        if interactive:
+            messagebox.showerror("检查更新", message)
+
+    def show_update_result(self, update_info, interactive=True):
         if update_info.has_update:
+            self.update_info = update_info
+            self.tray_icon.set_tip(f"Codex 额度悬浮球 - 有新版本 v{update_info.latest_version}")
+            if not self.update_notice_shown:
+                self.tray_icon.show_balloon(
+                    "发现新版本",
+                    f"v{update_info.latest_version} 可升级，点击悬浮球上的“升级”标记或右键托盘打开下载。",
+                )
+                self.update_notice_shown = True
+            self.render()
             message = (
                 f"发现新版本 v{update_info.latest_version}\n"
                 f"当前版本 v{update_info.current_version}\n\n"
                 "是否打开下载页面？"
             )
-            if messagebox.askyesno("发现更新", message):
-                webbrowser.open(update_info.asset_url or update_info.release_url)
+            if interactive and messagebox.askyesno("发现更新", message):
+                self.open_update_download()
             return
 
-        messagebox.showinfo(
-            "检查更新",
-            f"当前已是最新版本 v{update_info.current_version}",
-        )
+        self.update_info = None
+        self.update_notice_shown = False
+        self.tray_icon.set_tip(DEFAULT_TRAY_TIP)
+        self.render()
+        if interactive:
+            messagebox.showinfo(
+                "检查更新",
+                f"当前已是最新版本 v{update_info.current_version}",
+            )
+
+    def open_update_download(self):
+        if not self.has_pending_update():
+            self.check_update_now(interactive=True)
+            return
+        webbrowser.open(self.update_info.asset_url or self.update_info.release_url)
 
     def locate_from_tray(self):
         self.close_menu()
@@ -994,6 +1067,12 @@ class FloatingInfoBall:
         self.close_menu()
         x, y = self.cursor_position()
         menu = tk.Menu(self.root, tearoff=0)
+        if self.has_pending_update():
+            menu.add_command(
+                label=f"升级到 v{self.update_info.latest_version}",
+                command=lambda: self.run_menu_action(self.open_update_download),
+            )
+            menu.add_separator()
         menu.add_command(label="定位悬浮球", command=lambda: self.run_menu_action(self.locate_from_tray))
         menu.add_separator()
         menu.add_command(label="退出", command=lambda: self.run_menu_action(self.quit))
@@ -1105,6 +1184,11 @@ class FloatingInfoBall:
         )
         menu.add_separator()
         menu.add_command(label="刷新", command=lambda: self.run_menu_action(self.refresh_now))
+        if self.has_pending_update():
+            menu.add_command(
+                label=f"升级到 v{self.update_info.latest_version}",
+                command=lambda: self.run_menu_action(self.open_update_download),
+            )
         menu.add_command(label="检查更新", command=lambda: self.run_menu_action(self.check_update_now))
         menu.add_command(
             label="数据源: " + ("静态" if self.config_data.get("data_source") == "static" else "文件"),
@@ -1154,7 +1238,9 @@ class FloatingInfoBall:
             self.save_position()
         elif not self.was_dragged:
             target = self.target_at(event.x, event.y)
-            if target:
+            if target == UPDATE_BADGE_TARGET:
+                self.open_update_download()
+            elif target:
                 self.config_data["active_window"] = target
                 self.render()
             else:

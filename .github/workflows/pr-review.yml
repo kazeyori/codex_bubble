@@ -38,7 +38,7 @@ jobs:
 
       - name: Build and verify installer
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -File scripts\build_release.ps1
+        run: powershell -NoProfile -File scripts\build_release.ps1
 
       - name: Resolve installer path
         id: installer

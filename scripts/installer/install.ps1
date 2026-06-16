@@ -1,4 +1,4 @@
-param(
+﻿param(
   [switch]$NoLaunch,
   [switch]$Quiet
 )
@@ -7,10 +7,10 @@ $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms
 
 $appName = "CodexBubble"
-$displayName = [string]::Concat([char[]](67,111,100,101,120,32,39069,24230,24748,28014,29699))
-$starterName = [string]::Concat([char[]](21551,21160,24748,28014,29699,46,98,97,116))
-$uninstallerName = [string]::Concat([char[]](21368,36733,24748,28014,29699,46,98,97,116))
-$uninstallShortcutName = [string]::Concat([char[]](21368,36733,32,67,111,100,101,120,32,39069,24230,24748,28014,29699,46,108,110,107))
+$displayName = "Codex 额度悬浮球"
+$starterName = "启动悬浮球.bat"
+$uninstallerName = "卸载悬浮球.bat"
+$uninstallShortcutName = "卸载 Codex 额度悬浮球.lnk"
 $installRoot = $env:CODEX_BUBBLE_INSTALL_ROOT
 if ([string]::IsNullOrWhiteSpace($installRoot)) {
   $installRoot = Join-Path $env:LOCALAPPDATA "Programs\CodexBubble"
@@ -23,15 +23,21 @@ if (!(Test-Path -LiteralPath $payload)) {
 }
 
 if (!$NoLaunch) {
-  $oldProcesses = Get-CimInstance Win32_Process |
-    Where-Object {
-      $_.CommandLine -and (
-        $_.CommandLine -like "*codex_bubble*floating_info_ball.py*" -or
-        $_.CommandLine -like "*codex_bubble*codex_usage_daemon.py*" -or
-        $_.CommandLine -like "*CodexBubble*floating_info_ball.py*" -or
-        $_.CommandLine -like "*CodexBubble*codex_usage_daemon.py*"
-      )
-    }
+  $oldProcesses = @()
+  try {
+    $oldProcesses = Get-CimInstance Win32_Process -ErrorAction Stop |
+      Where-Object {
+        $_.CommandLine -and (
+          $_.CommandLine -like "*codex_bubble*floating_info_ball.py*" -or
+          $_.CommandLine -like "*codex_bubble*codex_usage_daemon.py*" -or
+          $_.CommandLine -like "*CodexBubble*floating_info_ball.py*" -or
+          $_.CommandLine -like "*CodexBubble*codex_usage_daemon.py*"
+        )
+      }
+  }
+  catch {
+    $oldProcesses = @()
+  }
   foreach ($process in $oldProcesses) {
     try {
       Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
@@ -104,7 +110,7 @@ try {
   }
   if (!$Quiet) {
     [System.Windows.Forms.MessageBox]::Show(
-      [string]::Concat([char[]](23433,35013,23436,25104,12290,24050,21019,24314,26700,38754,21644,24320,22987,33756,21333,24555,25463,26041,24335,65292,24182,21551,21160,24748,28014,29699,12290)),
+      "安装完成。已创建桌面和开始菜单快捷方式，并启动悬浮球。",
       $displayName,
       [System.Windows.Forms.MessageBoxButtons]::OK,
       [System.Windows.Forms.MessageBoxIcon]::Information

@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$InstallRoot = "",
   [switch]$NoPrompt,
   [switch]$Quiet
@@ -7,8 +7,8 @@ param(
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Windows.Forms
 
-$displayName = [string]::Concat([char[]](67,111,100,101,120,32,39069,24230,24748,28014,29699))
-$starterName = [string]::Concat([char[]](21551,21160,24748,28014,29699,46,98,97,116))
+$displayName = "Codex 额度悬浮球"
+$starterName = "启动悬浮球.bat"
 
 if ([string]::IsNullOrWhiteSpace($InstallRoot)) {
   $InstallRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
@@ -22,7 +22,7 @@ if (!(Test-Path -LiteralPath (Join-Path $InstallRoot $starterName)) -or
 
 if (!$NoPrompt -and !$Quiet) {
   $result = [System.Windows.Forms.MessageBox]::Show(
-    [string]::Concat([char[]](30830,23450,35201,21368,36733,32,67,111,100,101,120,32,39069,24230,24748,28014,29699,32,21527,65311)),
+    "确定要卸载 Codex 额度悬浮球 吗？",
     $displayName,
     [System.Windows.Forms.MessageBoxButtons]::YesNo,
     [System.Windows.Forms.MessageBoxIcon]::Question
@@ -32,15 +32,21 @@ if (!$NoPrompt -and !$Quiet) {
   }
 }
 
-$processes = Get-CimInstance Win32_Process |
-  Where-Object {
-    $_.CommandLine -and (
-      $_.CommandLine -like "*codex_bubble*floating_info_ball.py*" -or
-      $_.CommandLine -like "*codex_bubble*codex_usage_daemon.py*" -or
-      $_.CommandLine -like "*CodexBubble*floating_info_ball.py*" -or
-      $_.CommandLine -like "*CodexBubble*codex_usage_daemon.py*"
-    )
-  }
+$processes = @()
+try {
+  $processes = Get-CimInstance Win32_Process -ErrorAction Stop |
+    Where-Object {
+      $_.CommandLine -and (
+        $_.CommandLine -like "*codex_bubble*floating_info_ball.py*" -or
+        $_.CommandLine -like "*codex_bubble*codex_usage_daemon.py*" -or
+        $_.CommandLine -like "*CodexBubble*floating_info_ball.py*" -or
+        $_.CommandLine -like "*CodexBubble*codex_usage_daemon.py*"
+      )
+    }
+}
+catch {
+  $processes = @()
+}
 foreach ($process in $processes) {
   try {
     Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
@@ -51,7 +57,7 @@ foreach ($process in $processes) {
 
 $shortcutNames = @(
   "$displayName.lnk",
-  ([string]::Concat([char[]](21368,36733,32,67,111,100,101,120,32,39069,24230,24748,28014,29699,46,108,110,107)))
+  "卸载 Codex 额度悬浮球.lnk"
 )
 $shortcutFolders = @(
   [Environment]::GetFolderPath("Desktop"),
@@ -66,14 +72,18 @@ foreach ($folder in $shortcutFolders) {
   }
 }
 
-$deleteScript = Join-Path $env:TEMP ("codex_bubble_uninstall_" + $PID + ".cmd")
-$escapedRoot = $InstallRoot.Replace('"', '""')
-$message = [string]::Concat([char[]](21368,36733,23436,25104,12290))
-if ($Quiet) {
-  $content = "@echo off`r`ntimeout /t 1 /nobreak >nul`r`nrd /s /q ""$escapedRoot""`r`ndel ""%~f0""`r`n"
+try {
+  Remove-Item -LiteralPath $InstallRoot -Recurse -Force -ErrorAction Stop
 }
-else {
-  $content = "@echo off`r`ntimeout /t 1 /nobreak >nul`r`nrd /s /q ""$escapedRoot""`r`nmsg * ""$message"" >nul 2>nul`r`ndel ""%~f0""`r`n"
+catch {
+  throw "卸载文件删除失败，请确认悬浮球已经退出后重试：$($_.Exception.Message)"
 }
-Set-Content -LiteralPath $deleteScript -Value $content -Encoding ASCII
-Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "`"$deleteScript`"" -WorkingDirectory $env:TEMP -WindowStyle Hidden
+
+if (!$Quiet) {
+  [System.Windows.Forms.MessageBox]::Show(
+    "卸载完成。",
+    $displayName,
+    [System.Windows.Forms.MessageBoxButtons]::OK,
+    [System.Windows.Forms.MessageBoxIcon]::Information
+  ) | Out-Null
+}
