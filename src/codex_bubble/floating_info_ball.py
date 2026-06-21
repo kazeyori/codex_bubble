@@ -62,6 +62,9 @@ DEFAULT_TRAY_TIP = "Codex 额度悬浮球 - 双击定位"
 UPDATE_BADGE_TARGET = "__open_update__"
 UPDATE_STARTUP_DELAY_MS = 15000
 UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
+REFRESH_INTERVAL_MS = 60000
+DAEMON_STALE_SECONDS = 90
+MAX_USAGE_SNAPSHOT_AGE_SECONDS = 10 * 60
 
 DEFAULT_CONFIG = {
     "collapsed": True,
@@ -512,6 +515,12 @@ class FloatingInfoBall:
             return
         try:
             data = json.loads(DATA_PATH.read_text(encoding="utf-8-sig"))
+            if self.is_usage_snapshot_stale(data):
+                self.config_data["data_source"] = "static"
+                self.config_data["usage_windows"] = disconnected_usage_windows()
+                if not self.apply_snapshot_time(data.get("snapshot_time")):
+                    self.last_refresh = datetime.fromtimestamp(DATA_PATH.stat().st_mtime)
+                return
             if isinstance(data.get("usage_windows"), dict):
                 self.config_data["usage_windows"] = deep_merge(
                     self.config_data.get("usage_windows", {}),
@@ -527,9 +536,9 @@ class FloatingInfoBall:
             LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
 
-    def apply_snapshot_time(self, value):
+    def parse_snapshot_time(self, value):
         if not value:
-            return False
+            return None
         try:
             text = str(value)
             if text.endswith("Z"):
@@ -537,10 +546,36 @@ class FloatingInfoBall:
             snapshot = datetime.fromisoformat(text)
             if snapshot.tzinfo is not None:
                 snapshot = snapshot.astimezone().replace(tzinfo=None)
-            self.last_refresh = snapshot
-            return True
+            return snapshot
         except Exception:
+            return None
+
+    def snapshot_age_seconds(self, data):
+        recorded_age = data.get("snapshot_age_seconds")
+        if isinstance(recorded_age, (int, float)):
+            recorded_age = max(0, float(recorded_age))
+        else:
+            recorded_age = None
+        snapshot = self.parse_snapshot_time(data.get("snapshot_time"))
+        if snapshot is None:
+            return recorded_age
+        computed_age = max(0, (datetime.now() - snapshot).total_seconds())
+        if recorded_age is None:
+            return computed_age
+        return max(recorded_age, computed_age)
+
+    def is_usage_snapshot_stale(self, data):
+        if data.get("snapshot_stale") is True:
+            return True
+        age = self.snapshot_age_seconds(data)
+        return age is not None and age > MAX_USAGE_SNAPSHOT_AGE_SECONDS
+
+    def apply_snapshot_time(self, value):
+        snapshot = self.parse_snapshot_time(value)
+        if snapshot is None:
             return False
+        self.last_refresh = snapshot
+        return True
 
     def save_config(self):
         saved_config = deep_merge(DEFAULT_CONFIG, self.config_data)
@@ -589,6 +624,15 @@ class FloatingInfoBall:
             LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
             LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
             return False
+
+    def should_run_fetcher_before_refresh(self):
+        if not DATA_PATH.exists():
+            return True
+        try:
+            age = (datetime.now() - datetime.fromtimestamp(DATA_PATH.stat().st_mtime)).total_seconds()
+            return age > DAEMON_STALE_SECONDS
+        except Exception:
+            return True
 
     def save_position(self):
         self.config_data["position"] = {
@@ -872,10 +916,12 @@ class FloatingInfoBall:
         self.click_targets.append((x, y, x + width, y + height, UPDATE_BADGE_TARGET))
 
     def schedule_refresh(self):
+        if self.should_run_fetcher_before_refresh():
+            self.run_fetcher_once()
         self.load_usage_data()
         if not self.is_animating:
             self.render()
-        self.root.after(60000, self.schedule_refresh)
+        self.root.after(REFRESH_INTERVAL_MS, self.schedule_refresh)
 
     def render(self):
         self.click_targets = []

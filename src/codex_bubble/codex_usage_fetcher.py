@@ -15,6 +15,7 @@ LABEL_DAY = "1\u5929"
 LABEL_MINUTE = "\u5206\u949f"
 UNKNOWN_VALUE = "-"
 PREFERRED_LIMIT_IDS = {"codex"}
+MAX_SNAPSHOT_AGE_SECONDS = 10 * 60
 
 
 def write_log(message):
@@ -220,8 +221,11 @@ def fetch_from_codex_sessions():
     if latest is None:
         return None
     event_ts, rate_limits, source_path = latest
+    now_ts = datetime.now(timezone.utc).timestamp()
     payload = normalize_payload({"rate_limits": rate_limits})
     payload["snapshot_time"] = datetime.fromtimestamp(event_ts, tz=timezone.utc).isoformat()
+    payload["snapshot_age_seconds"] = max(0, int(now_ts - event_ts))
+    payload["snapshot_stale"] = payload["snapshot_age_seconds"] > MAX_SNAPSHOT_AGE_SECONDS
     payload["snapshot_source"] = source_path
     return payload
 
