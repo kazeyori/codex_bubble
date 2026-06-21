@@ -63,6 +63,7 @@ UPDATE_BADGE_TARGET = "__open_update__"
 UPDATE_STARTUP_DELAY_MS = 15000
 UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
 REFRESH_INTERVAL_MS = 60000
+REFRESH_RETRY_DELAY_MS = 5000
 DAEMON_STALE_SECONDS = 90
 MAX_USAGE_SNAPSHOT_AGE_SECONDS = 10 * 60
 
@@ -629,7 +630,10 @@ class FloatingInfoBall:
             return True
         try:
             age = (datetime.now() - datetime.fromtimestamp(DATA_PATH.stat().st_mtime)).total_seconds()
-            return age > DAEMON_STALE_SECONDS
+            if age > DAEMON_STALE_SECONDS:
+                return True
+            data = json.loads(DATA_PATH.read_text(encoding="utf-8-sig"))
+            return self.is_usage_snapshot_stale(data)
         except Exception:
             return True
 
@@ -931,12 +935,20 @@ class FloatingInfoBall:
         self.click_targets.append((x, y, x + width, y + height, UPDATE_BADGE_TARGET))
 
     def schedule_refresh(self):
-        if self.should_run_fetcher_before_refresh():
-            self.run_fetcher_once()
+        try:
+            if self.should_run_fetcher_before_refresh():
+                self.run_fetcher_once()
+            self.refresh_from_usage_data()
+        except Exception:
+            LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LOG_PATH.write_text(traceback.format_exc(), encoding="utf-8")
+        finally:
+            self.root.after(REFRESH_INTERVAL_MS, self.schedule_refresh)
+
+    def refresh_from_usage_data(self):
         self.load_usage_data()
         if not self.is_animating:
             self.render()
-        self.root.after(REFRESH_INTERVAL_MS, self.schedule_refresh)
 
     def render(self):
         self.click_targets = []
@@ -1220,9 +1232,13 @@ class FloatingInfoBall:
 
     def refresh_now(self):
         self.run_fetcher_once()
-        self.load_usage_data()
-        self.render()
+        self.refresh_from_usage_data()
         self.save_position()
+        self.root.after(REFRESH_RETRY_DELAY_MS, self.refresh_after_recent_action)
+
+    def refresh_after_recent_action(self):
+        self.run_fetcher_once()
+        self.refresh_from_usage_data()
 
     def schedule_update_check(self):
         self.check_update_now(interactive=False)
