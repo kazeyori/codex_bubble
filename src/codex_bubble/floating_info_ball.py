@@ -510,27 +510,25 @@ class FloatingInfoBall:
     def load_usage_data(self):
         if not DATA_PATH.exists():
             self.config_data["data_source"] = "static"
+            self.config_data["usage_stale"] = False
             self.config_data["usage_windows"] = disconnected_usage_windows()
             self.last_refresh = datetime.now()
             return
         try:
             data = json.loads(DATA_PATH.read_text(encoding="utf-8-sig"))
-            if self.is_usage_snapshot_stale(data):
-                self.config_data["data_source"] = "static"
-                self.config_data["usage_windows"] = disconnected_usage_windows()
-                if not self.apply_snapshot_time(data.get("snapshot_time")):
-                    self.last_refresh = datetime.fromtimestamp(DATA_PATH.stat().st_mtime)
-                return
+            snapshot_stale = self.is_usage_snapshot_stale(data)
             if isinstance(data.get("usage_windows"), dict):
                 self.config_data["usage_windows"] = deep_merge(
                     self.config_data.get("usage_windows", {}),
                     data["usage_windows"],
                 )
-            self.config_data["data_source"] = data.get("data_source", "file")
+            self.config_data["data_source"] = "stale" if snapshot_stale else data.get("data_source", "file")
+            self.config_data["usage_stale"] = snapshot_stale
             if not self.apply_snapshot_time(data.get("snapshot_time")):
                 self.last_refresh = datetime.fromtimestamp(DATA_PATH.stat().st_mtime)
         except Exception:
             self.config_data["data_source"] = "static"
+            self.config_data["usage_stale"] = False
             self.config_data["usage_windows"] = disconnected_usage_windows()
             self.last_refresh = datetime.now()
             LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -580,6 +578,7 @@ class FloatingInfoBall:
     def save_config(self):
         saved_config = deep_merge(DEFAULT_CONFIG, self.config_data)
         saved_config["data_source"] = "static"
+        saved_config["usage_stale"] = False
         saved_config["usage_windows"] = disconnected_usage_windows()
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         CONFIG_PATH.write_text(
@@ -764,6 +763,8 @@ class FloatingInfoBall:
         return self.canvas.create_polygon(points, smooth=True, **kwargs)
 
     def compact_refresh_time_text(self):
+        if self.config_data.get("usage_stale"):
+            return f"旧{self.last_refresh:%H:%M}"
         return f"{self.last_refresh:%H:%M}"
 
     def draw_refresh_glyph(self, x, y, color):
@@ -901,6 +902,20 @@ class FloatingInfoBall:
 
     def update_badge_label(self):
         return "更新"
+
+    def data_source_label(self):
+        source = self.config_data.get("data_source")
+        if source == "static":
+            return "静态"
+        if source == "stale" or self.config_data.get("usage_stale"):
+            return "旧快照"
+        return "文件"
+
+    def panel_title(self):
+        label = self.data_source_label()
+        if label == "文件":
+            return "Codex 用量"
+        return f"Codex 用量 · {label}"
 
     def draw_update_badge(self, x, y, width=44, height=22):
         colors = self.config_data["colors"]
@@ -1049,7 +1064,7 @@ class FloatingInfoBall:
         self.canvas.create_text(
             56,
             34,
-            text="Codex 用量" if self.config_data.get("data_source") != "static" else "Codex 用量 · 静态",
+            text=self.panel_title(),
             fill=colors["text"],
             font=("Microsoft YaHei UI", 9, "bold"),
             anchor="w",
@@ -1609,7 +1624,7 @@ class FloatingInfoBall:
         menu.add_command(label="检查更新", command=lambda: self.run_menu_action(self.check_update_now))
         menu.add_command(label=f"当前版本 v{read_current_version()}", state="disabled")
         menu.add_command(
-            label="数据源: " + ("静态" if self.config_data.get("data_source") == "static" else "文件"),
+            label="数据源: " + self.data_source_label(),
             state="disabled",
         )
         menu.add_command(label="前往官网", command=lambda: self.run_menu_action(self.open_project_homepage))
